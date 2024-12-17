@@ -2,6 +2,7 @@ package conf
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,31 +12,21 @@ import (
 )
 
 const (
-	cfSuffix        = "yaml"
-	defaultFileName = "config"
+	extension       = "yaml"
+	fileName        = "config"
 	defaultFilePath = ""
-
 	// 设置默认文件系统权限
 	FsPerm = fs.FileMode(0755)
-
 	// DefaultConfigJSON configure json string
 	DefaultConfigJSON = `
 {
 	"port": 2468,
-	"mode": "mmap",
-	"url": "/cql",
-	"filesize": 1024,
 	"path": "/tmp/vasedb",
 	"auth": "",
-	"log": "/tmp/vasedb/out.log",
+	"log_path": "/tmp/vasedb/out.log",
 	"debug": false,
-	"encoder": {
-		"enable": true,
-		"secret": "/tmp/vasedb/etc/encrypt.wasm"
-	},
 	"compressor": {
 		"enable": true,
-		"mode": "cycle",
 		"second": 15000
 	}
 }
@@ -45,14 +36,13 @@ const (
 var (
 	// Settings global configure options
 	Settings *ServerConfig = new(ServerConfig)
-	// DefaultConfig is the default configuration
-	DefaultConfig *ServerConfig = new(ServerConfig)
+	// Default is the default configuration
+	Default *ServerConfig = new(ServerConfig)
 )
 
 func init() {
 	// 先读内置默认配置，设置为全局的配置
-	_ = DefaultConfig.Unmarshal([]byte(DefaultConfigJSON))
-
+	_ = Default.Unmarshal([]byte(DefaultConfigJSON))
 	// 当初始化完成之后应该使用此 Settings 配置
 	_ = Settings.Unmarshal([]byte(DefaultConfigJSON))
 }
@@ -62,17 +52,31 @@ func HasCustom(path string) bool {
 	return path != defaultFilePath
 }
 
+func Vaildated(opt *ServerConfig) error {
+	if opt.Password == "" {
+		return errors.New("auth password is empty")
+	}
+	if opt.Path == "" {
+		return errors.New("data directory path is empty")
+	}
+	if !(opt.Port > 1024 && opt.Port < 65535) {
+		return errors.New("port range not legal")
+	}
+	if opt.LogPath == "" {
+		return errors.New("logging output path is empty")
+	}
+	return nil
+}
+
 // Load through a configuration file
 func Load(file string, opt *ServerConfig) error {
-
-	// 检查文件是否存在
 	_, err := os.Stat(file)
 	if err != nil {
 		return err
 	}
 
 	v := viper.New()
-	v.SetConfigType(cfSuffix)
+	v.SetConfigType(extension)
 	v.SetConfigFile(file)
 
 	err = v.ReadInConfig()
@@ -84,19 +88,16 @@ func Load(file string, opt *ServerConfig) error {
 }
 
 func saved(path string, opt *ServerConfig) error {
-	// 将配置对象转换为 YAML 格式的字节数组
 	yamlData, _ := yaml.Marshal(&opt)
 	return os.WriteFile(path, yamlData, FsPerm)
 }
 
-// SavedAs Settings.Path 存储到磁盘文件中
 func (opt *ServerConfig) SavedAs(path string) error {
 	return saved(path, opt)
 }
 
-// Saved Settings.Path 存储到配置好的目录中
 func (opt *ServerConfig) Saved() error {
-	return saved(filepath.Join(opt.Path, defaultFileName+"."+cfSuffix), opt)
+	return saved(filepath.Join(opt.Path, fileName+"."+extension), opt)
 }
 
 func (opt *ServerConfig) Unmarshal(data []byte) error {
@@ -119,23 +120,13 @@ func toString(opt *ServerConfig) string {
 type ServerConfig struct {
 	Port       int        `json:"port"`
 	Path       string     `json:"path"`
-	Mode       string     `json:"mode"`
 	Debug      bool       `json:"debug"`
-	FileSize   int64      `json:"filesize"`
-	LogPath    string     `json:"log"`
+	LogPath    string     `json:"log_path"`
 	Password   string     `json:"auth"`
-	Encoder    Encoder    `json:"encoder"`
 	Compressor Compressor `json:"compressor"`
 }
 
 type Compressor struct {
-	Enable  bool   `json:"enable"`
-	Mode    string `json:"mode"`
-	Hotspot int64  `json:"hotspot"`
-	Second  int64  `json:"second"`
-}
-
-type Encoder struct {
-	Enable bool   `json:"enable"`
-	Secret string `json:"secret"`
+	Enable bool  `json:"enable"`
+	Second int64 `json:"second"`
 }

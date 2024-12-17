@@ -37,38 +37,33 @@ const (
 
 var (
 	//go:embed banner.txt
-	banner    string
+	logo      string
 	greenFont = color.New(color.FgMagenta)
-	logo      = greenFont.Sprintf(banner, version, website)
+	banner    = greenFont.Sprintf(logo, version, website)
 	daemon    = false
 )
 
 // 初始化全局需要使用的组件
+// 解析命令行输入的参数，默认命令行参数优先级最高，但是相对于能设置参数比较少
 func init() {
-
-	// 打印 Banner 信息
-	fmt.Println(logo)
-
-	// 解析命令行输入的参数，默认命令行参数优先级最高，但是相对于能设置参数比较少
+	fmt.Println(banner)
 	fl := parseFlags()
 
-	// 根据命令行传入的配置文件地址，覆盖掉默认的配置
 	if conf.HasCustom(fl.config) {
 		err := conf.Load(fl.config, conf.Settings)
 		if err != nil {
 			clog.Failed(err)
 		}
-		clog.Info("Loading custom config file was successful")
+		clog.Info("Loading custom config file was successfully")
 	}
 
 	if fl.debug {
 		conf.Settings.Debug = fl.debug
-		// 覆盖掉默认 DEBUG 选项
 		clog.IsDebug = conf.Settings.Debug
 	}
 
 	// 命令行传入的密码优先级最高
-	if fl.auth != conf.DefaultConfig.Password {
+	if fl.auth != conf.Default.Password {
 		conf.Settings.Password = fl.auth
 	} else {
 		// 如果命令行没有传入密码，系统随机生成一串 16 位的密码
@@ -76,37 +71,31 @@ func init() {
 		clog.Infof("The default password is: %s", conf.Settings.Password)
 	}
 
-	// 设置数据存储路径和端口
-	if fl.path != conf.DefaultConfig.Path {
+	if fl.path != conf.Default.Path {
 		conf.Settings.Path = fl.path
 	}
 
-	if fl.port != conf.DefaultConfig.Port {
+	if fl.port != conf.Default.Port {
 		conf.Settings.Port = fl.port
 	}
 
 	clog.Debug(conf.Settings)
 
 	var err error = nil
-	// 设置一下运行过程中日志输出文件的路径
+	err = conf.Vaildated(conf.Settings)
+	if err != nil {
+		clog.Failed(err)
+	}
+
 	err = clog.SetOutput(conf.Settings.LogPath)
 	if err != nil {
 		clog.Failed(err)
 	}
 
-	clog.Info("Initial logger setup successful")
-
-	// 设置数据文件存储位置和相关的文件系统
-	_, err = vfs.SetupFS(conf.Settings.Path)
-	if err != nil {
-		clog.Failed(err)
-	}
-
-	clog.Info("Setup file system was successful")
+	clog.Info("Initialized log file output successfully")
 }
 
-func Execute() {
-	// 检查是否启用了守护进程模式
+func StartApp() {
 	if daemon {
 		runAsDaemon()
 	} else {
@@ -114,22 +103,11 @@ func Execute() {
 	}
 }
 
-// flags 优先级别最高的参数，从命令行传入
-type flags struct {
-	auth   string
-	port   int
-	path   string
-	config string
-	debug  bool
-}
-
-// runAsDaemon 以守护进程模式运行
 func runAsDaemon() {
-	// 后台守护进程模式启动，创建一个与当前程序相同的命令
-	cmd := exec.Command(os.Args[0], utils.SplitArgs(utils.TrimDaemon(os.Args))...)
-	// 如果需要传递环境变量信息
+	args := utils.SplitArgs(utils.TrimDaemon(os.Args))
+	cmd := exec.Command(os.Args[0], args...)
 	cmd.Env = os.Environ()
-	// 从当前进程启动守护进程
+
 	err := cmd.Start()
 	if err != nil {
 		clog.Failed(err)
@@ -138,36 +116,55 @@ func runAsDaemon() {
 	clog.Infof("Daemon launched PID: %d", cmd.Process.Pid)
 }
 
-// runServer 启动 HTTP 服务器
 func runServer() {
-	// 开始执行正常的 vasedb 逻辑，这里会启动 HTTP 服务器让客户端连接
-	hs, err := server.New(conf.Settings.Port)
+	hts, err := server.New(&server.Options{
+		Port: conf.Settings.Port,
+		Auth: conf.Settings.Password,
+	})
 	if err != nil {
 		clog.Failed(err)
 	}
 
+	fss, err := vfs.OpenFS(&vfs.Options{
+		FsPerm: conf.FsPerm,
+		Path:   conf.Settings.Path,
+	})
+	if err != nil {
+		clog.Failed(err)
+	} else {
+		hts.SetupFS(fss)
+		clog.Info("Setup file system was successfully")
+	}
+
 	go func() {
-		err := hs.Startup()
+		err := hts.Startup()
 		if err != nil {
 			clog.Failed(err)
 		}
 	}()
 
 	time.Sleep(500 * time.Millisecond)
-	clog.Infof("HTTP server started at http://%s:%d 🚀", hs.IPv4(), hs.Port())
+	clog.Infof("HTTP server started at http://%s:%d 🚀", hts.IPv4(), hts.Port())
 
 	select {}
 }
 
-// parseFlags 解析从命令行启动输入的主要参数
+type flags struct {
+	auth   string
+	port   int
+	path   string
+	config string
+	debug  bool
+}
+
 func parseFlags() (fl *flags) {
 	fl = new(flags)
-	flag.StringVar(&fl.auth, "auth", conf.DefaultConfig.Password, "--auth specify the server authentication password.")
-	flag.StringVar(&fl.config, "config", "", "--config specify the configuration file path.")
-	flag.StringVar(&fl.path, "path", conf.DefaultConfig.Path, "--path specify the data storage directory.")
-	flag.IntVar(&fl.port, "port", conf.DefaultConfig.Port, "--port specify the HTTP server port.")
-	flag.BoolVar(&fl.debug, "debug", conf.DefaultConfig.Debug, "--debug whether to enable debug mode.")
-	flag.BoolVar(&daemon, "daemon", false, "--daemon whether to run with a daemon.")
+	flag.StringVar(&fl.auth, "auth", conf.Default.Password, "--auth the server authentication password.")
+	flag.StringVar(&fl.path, "path", conf.Default.Path, "--path the data storage directory.")
+	flag.BoolVar(&fl.debug, "debug", conf.Default.Debug, "--debug enable debug mode.")
+	flag.StringVar(&fl.config, "config", "", "--config the configuration file path.")
+	flag.IntVar(&fl.port, "port", conf.Default.Port, "--port the HTTP server port.")
+	flag.BoolVar(&daemon, "daemon", false, "--daemon run with a daemon.")
 	flag.Parse()
 	return
 }
