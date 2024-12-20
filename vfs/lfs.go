@@ -88,7 +88,7 @@ func HashSum64(key string) uint64 {
 }
 
 func (lfs *LogStructuredFS) createActiveFile() error {
-	fileName, err := newDataFileName(lfs.version)
+	fileName, err := newDataFileName(lfs.version + 1)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,9 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 		return fmt.Errorf("failed to read directory: %w", err)
 	}
 
-	if len(files) > 0 {
+	if len(files) <= 0 {
+		lfs.version = 1
+	} else {
 		for _, file := range files {
 			if !file.IsDir() && strings.HasSuffix(file.Name(), dataFileExtension) {
 				regions, err := os.Open(filepath.Join(lfs.directory, file.Name()))
@@ -135,7 +137,7 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 		}
 
 		var version []uint64
-		for v, _ := range lfs.regions {
+		for v := range lfs.regions {
 			version = append(version, v)
 		}
 		// 对 version 切片从小到大排序
@@ -144,20 +146,24 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 		})
 		// 找到最新数据文件的版本
 		lfs.version = version[len(version)-1]
-	} else {
-		lfs.version = 1
 	}
 
 	return nil
 }
 
 func OpenFS(opt *Options) (*LogStructuredFS, error) {
-	err := checkFileSystem(opt.Path)
-	if err != nil {
-		return nil, err
-	}
-
+	var top_err error
 	once.Do(func() {
+		if instance != nil {
+			return
+		}
+
+		err := checkFileSystem(opt.Path)
+		if err != nil {
+			top_err = err
+			return
+		}
+
 		fsPerm = opt.FsPerm
 		instance = &LogStructuredFS{
 			indexs:    make([]*indexMap, indexShard),
@@ -176,15 +182,20 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 		// 先对已有的数据文件执行恢复操作，并且初始化内存中的数据版本号
 		err = instance.recoverRegions()
 		if err != nil {
-			err = fmt.Errorf("failed to open file system: %w", err)
+			top_err = fmt.Errorf("failed to recover data regions: %w", err)
+			return
 		}
 
 		err = instance.createActiveFile()
 		if err != nil {
-			err = fmt.Errorf("failed to open file system: %w", err)
+			top_err = fmt.Errorf("failed to create active file: %w", err)
+			return
 		}
-
 	})
+
+	if top_err != nil {
+		return nil, fmt.Errorf("failed to open file system: %w", top_err)
+	}
 
 	// 单例子模式，但是挡不住其他包通过 new(LogStructuredFS) 也能创建一个实例，那这样根本不起作用了
 	return instance, nil
@@ -271,12 +282,12 @@ func checkFileSystem(path string) error {
 	return nil
 }
 
-func newDataFileName(newVersion uint64) (string, error) {
-	fileName := fmt.Sprintf("%08d%s", newVersion, dataFileExtension)
+func newDataFileName(version uint64) (string, error) {
+	fileName := fmt.Sprintf("%08d%s", version, dataFileExtension)
 	if len(fileName) == 8 && strings.HasPrefix(fileName, "000") {
 		return fileName, nil
 	}
-	return "", fmt.Errorf("new version %d cannot be converted to a valid file name", newVersion)
+	return "", fmt.Errorf("new version %d cannot be converted to a valid file name", version)
 }
 
 // fileNameToUint16 将文件名（如 0000001.vsdb）中的数字部分转换为 uint16
