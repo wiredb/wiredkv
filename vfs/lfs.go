@@ -49,13 +49,13 @@ type indexMap struct {
 
 // LogStructuredFS represents the virtual file storage system.
 type LogStructuredFS struct {
-	indexs    []*indexMap         // Index mapping for INode references
-	active    *os.File            // Currently active file for writing
-	regions   map[uint64]*os.File // Archived files keyed by unique file ID
+	mu        sync.Mutex
 	offset    uint64
 	regionID  uint64
 	directory string
-	mu        sync.Mutex
+	indexs    []*indexMap         // Index mapping for INode references
+	active    *os.File            // Currently active file for writing
+	regions   map[uint64]*os.File // Archived files keyed by unique file ID
 }
 
 // 根据某种哈希函数（如简单的模运算）来选择分片
