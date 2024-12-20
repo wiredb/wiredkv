@@ -43,7 +43,7 @@ type INode struct {
 }
 
 type indexMap struct {
-	mux   sync.RWMutex      // 每个分片使用独立的锁
+	mu    sync.RWMutex      // 每个分片使用独立的锁
 	index map[uint64]*INode // 存储映射
 }
 
@@ -55,6 +55,7 @@ type LogStructuredFS struct {
 	offset    uint64
 	version   uint64
 	directory string
+	mu        sync.Mutex
 }
 
 // 根据某种哈希函数（如简单的模运算）来选择分片
@@ -65,15 +66,15 @@ func (lfs *LogStructuredFS) getShardIndex(key uint64) *indexMap {
 // 使用 `getShardIndex` 获取分片，并加锁进行操作
 func (lfs *LogStructuredFS) AddINode(key uint64, inode *INode) {
 	shard := lfs.getShardIndex(key)
-	shard.mux.Lock()
-	defer shard.mux.Unlock()
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
 	shard.index[key] = inode
 }
 
 func (lfs *LogStructuredFS) GetINode(key uint64) (*INode, bool) {
 	shard := lfs.getShardIndex(key)
-	shard.mux.RLock()
-	defer shard.mux.RUnlock()
+	shard.mu.RLock()
+	defer shard.mu.RUnlock()
 	inode, exists := shard.index[key]
 	return inode, exists
 }
@@ -89,6 +90,8 @@ func HashSum64(key string) uint64 {
 }
 
 func (lfs *LogStructuredFS) createActiveFile() error {
+	lfs.mu.Lock()
+	defer lfs.mu.Unlock()
 	fileName, err := newDataFileName(lfs.version + 1)
 	if err != nil {
 		return err
@@ -109,11 +112,14 @@ func (lfs *LogStructuredFS) createActiveFile() error {
 	}
 
 	lfs.active = activeFile
+	lfs.offset = uint64(len(dataFileMetadata))
 
 	return nil
 }
 
 func (lfs *LogStructuredFS) recoverRegions() error {
+	lfs.mu.Lock()
+	defer lfs.mu.Unlock()
 	files, err := os.ReadDir(lfs.directory)
 	if err != nil {
 		return fmt.Errorf("failed to read directory: %w", err)
@@ -176,7 +182,7 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 
 		for i := 0; i < indexShard; i++ {
 			instance.indexs[i] = &indexMap{
-				mux:   sync.RWMutex{},
+				mu:    sync.RWMutex{},
 				index: make(map[uint64]*INode),
 			}
 		}
@@ -204,6 +210,8 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 }
 
 func (lfs *LogStructuredFS) CloseFS() error {
+	lfs.mu.Lock()
+	defer lfs.mu.Unlock()
 	for _, file := range lfs.regions {
 		if err := utils.CloseFile(file); err != nil {
 			return fmt.Errorf("failed to close region file: %w", err)
