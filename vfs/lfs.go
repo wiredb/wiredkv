@@ -89,7 +89,7 @@ func HashSum64(key string) uint64 {
 	return h.Sum64()
 }
 
-func (lfs *LogStructuredFS) createActiveFile() error {
+func (lfs *LogStructuredFS) createActiveReigon() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
 	fileName, err := newDataFileName(lfs.regionID + 1)
@@ -194,9 +194,9 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 			return
 		}
 
-		err = instance.createActiveFile()
+		err = instance.createActiveReigon()
 		if err != nil {
-			top_err = fmt.Errorf("failed to create active file: %w", err)
+			top_err = fmt.Errorf("failed to create active regions: %w", err)
 			return
 		}
 	})
