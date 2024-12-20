@@ -52,6 +52,7 @@ type LogStructuredFS struct {
 	indexs    []*indexMap         // Index mapping for INode references
 	active    *os.File            // Currently active file for writing
 	regions   map[uint64]*os.File // Archived files keyed by unique file ID
+	offset    uint64
 	version   uint64
 	directory string
 }
@@ -168,6 +169,7 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 		instance = &LogStructuredFS{
 			indexs:    make([]*indexMap, indexShard),
 			regions:   make(map[uint64]*os.File, 10),
+			offset:    uint64(len(dataFileMetadata)),
 			version:   0,
 			directory: opt.Path,
 		}
