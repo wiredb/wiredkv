@@ -53,7 +53,7 @@ type LogStructuredFS struct {
 	active    *os.File            // Currently active file for writing
 	regions   map[uint64]*os.File // Archived files keyed by unique file ID
 	offset    uint64
-	version   uint64
+	regionID  uint64
 	directory string
 	mu        sync.Mutex
 }
@@ -92,7 +92,7 @@ func HashSum64(key string) uint64 {
 func (lfs *LogStructuredFS) createActiveFile() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
-	fileName, err := newDataFileName(lfs.version + 1)
+	fileName, err := newDataFileName(lfs.regionID + 1)
 	if err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 	}
 
 	if len(files) <= 0 {
-		lfs.version = 1
+		lfs.regionID = 1
 	} else {
 		for _, file := range files {
 			if !file.IsDir() && strings.HasSuffix(file.Name(), dataFileExtension) {
@@ -135,24 +135,24 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 					return fmt.Errorf("failed to open data file: %w", err)
 				}
 
-				version, err := dataFileNameToUint64(file.Name())
+				regionID, err := dataFileNameToUint64(file.Name())
 				if err != nil {
-					return fmt.Errorf("failed to get regions version: %w", err)
+					return fmt.Errorf("failed to get regions region id: %w", err)
 				}
-				lfs.regions[version] = regions
+				lfs.regions[regionID] = regions
 			}
 		}
 
-		var version []uint64
+		var regionIds []uint64
 		for v := range lfs.regions {
-			version = append(version, v)
+			regionIds = append(regionIds, v)
 		}
-		// 对 version 切片从小到大排序
-		sort.Slice(version, func(i, j int) bool {
-			return version[i] < version[j]
+		// 对 regionIds 切片从小到大排序
+		sort.Slice(regionIds, func(i, j int) bool {
+			return regionIds[i] < regionIds[j]
 		})
 		// 找到最新数据文件的版本
-		lfs.version = version[len(version)-1]
+		lfs.regionID = regionIds[len(regionIds)-1]
 	}
 
 	return nil
@@ -176,7 +176,7 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 			indexs:    make([]*indexMap, indexShard),
 			regions:   make(map[uint64]*os.File, 10),
 			offset:    uint64(len(dataFileMetadata)),
-			version:   0,
+			regionID:  0,
 			directory: opt.Path,
 		}
 
@@ -292,12 +292,12 @@ func checkFileSystem(path string) error {
 	return nil
 }
 
-func newDataFileName(version uint64) (string, error) {
-	fileName := fmt.Sprintf("%08d%s", version, dataFileExtension)
+func newDataFileName(regionID uint64) (string, error) {
+	fileName := fmt.Sprintf("%08d%s", regionID, dataFileExtension)
 	if len(fileName) == 8 && strings.HasPrefix(fileName, "000") {
 		return fileName, nil
 	}
-	return "", fmt.Errorf("new version %d cannot be converted to a valid file name", version)
+	return "", fmt.Errorf("new region id %d cannot be converted to a valid file name", regionID)
 }
 
 // fileNameToUint16 将文件名（如 0000001.vsdb）中的数字部分转换为 uint16
