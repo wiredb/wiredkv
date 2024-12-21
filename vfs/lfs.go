@@ -92,7 +92,8 @@ func HashSum64(key string) uint64 {
 func (lfs *LogStructuredFS) createActiveReigon() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
-	fileName, err := newDataFileName(lfs.regionID + 1)
+	lfs.regionID += 1
+	fileName, err := newDataFileName(lfs.regionID)
 	if err != nil {
 		return err
 	}
