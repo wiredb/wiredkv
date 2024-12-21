@@ -89,6 +89,22 @@ func HashSum64(key string) uint64 {
 	return h.Sum64()
 }
 
+func (lfs *LogStructuredFS) changeReigon() error {
+	lfs.mu.Lock()
+	defer lfs.mu.Unlock()
+	err := lfs.active.Sync()
+	if err != nil {
+		return err
+	}
+
+	err = lfs.active.Close()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (lfs *LogStructuredFS) createActiveReigon() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
