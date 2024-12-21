@@ -213,12 +213,14 @@ func (lfs *LogStructuredFS) CloseFS() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
 	for _, file := range lfs.regions {
-		if err := utils.CloseFile(file); err != nil {
+		err := utils.CloseFile(file)
+		if err != nil {
 			return fmt.Errorf("failed to close region file: %w", err)
 		}
 	}
 
-	if err := utils.CloseFile(lfs.active); err != nil {
+	err := utils.CloseFile(lfs.active)
+	if err != nil {
 		return fmt.Errorf("failed to close active region: %w", err)
 	}
 
