@@ -94,12 +94,12 @@ func (lfs *LogStructuredFS) changeReigon() error {
 	defer lfs.mu.Unlock()
 	err := lfs.active.Sync()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to sync active file: %w", err)
 	}
 
 	err = lfs.active.Close()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to close active file: %w", err)
 	}
 
 	return nil
@@ -111,17 +111,17 @@ func (lfs *LogStructuredFS) createActiveReigon() error {
 	lfs.regionID += 1
 	fileName, err := newDataFileName(lfs.regionID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to new data file name: %w", err)
 	}
 
 	activeFile, err := os.OpenFile(filepath.Join(lfs.directory, fileName), RWCA, fsPerm)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create active file: %w", err)
 	}
 
 	n, err := activeFile.Write(dataFileMetadata)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write data file metadata: %w", err)
 	}
 
 	if n != len(dataFileMetadata) {
