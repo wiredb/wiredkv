@@ -89,7 +89,7 @@ func HashSum64(key string) uint64 {
 	return h.Sum64()
 }
 
-func (lfs *LogStructuredFS) changeReigon() error {
+func (lfs *LogStructuredFS) ChangeReigons() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
 	err := lfs.active.Sync()
@@ -154,7 +154,7 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 
 				regionID, err := dataFileNameToUint64(file.Name())
 				if err != nil {
-					return fmt.Errorf("failed to get regions region id: %w", err)
+					return fmt.Errorf("failed to get regions id: %w", err)
 				}
 				lfs.regions[regionID] = regions
 			}
@@ -216,6 +216,7 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 			top_err = fmt.Errorf("failed to create active regions: %w", err)
 			return
 		}
+
 	})
 
 	if top_err != nil {

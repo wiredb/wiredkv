@@ -74,7 +74,7 @@ func unauthorizedResponse(w http.ResponseWriter, message string) {
 // 中间件函数，进行 BasicAuth 鉴权
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Auth")
+		authHeader := r.Header.Get("auth")
 		clog.Debugf("HTTP request header authorization: %s", authHeader)
 
 		// 获取客户端 IP 地址
