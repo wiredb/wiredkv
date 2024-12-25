@@ -18,13 +18,13 @@ import (
 )
 
 var (
-	once              sync.Once
-	indexShard        = 5
-	instance          *LogStructuredFS
-	fsPerm            = fs.FileMode(0755)
-	dataFileExtension = ".vsdb"
-	indexFullFileName = "idx.vsi"
-	dataFileMetadata  = []byte{0xDB, 0x0, 0x0, 0x1}
+	once             sync.Once
+	indexShard       = 5
+	instance         *LogStructuredFS
+	fsPerm           = fs.FileMode(0755)
+	fileExtension    = ".vsdb"
+	indexFileName    = "idx.vsdb"
+	dataFileMetadata = []byte{0xDB, 0x0, 0x0, 0x1}
 )
 
 const RWCA = os.O_RDWR | os.O_CREATE | os.O_APPEND
@@ -146,7 +146,7 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 		lfs.regionID = 1
 	} else {
 		for _, file := range files {
-			if !file.IsDir() && strings.HasSuffix(file.Name(), dataFileExtension) {
+			if !file.IsDir() && strings.HasSuffix(file.Name(), fileExtension) {
 				regions, err := os.Open(filepath.Join(lfs.directory, file.Name()))
 				if err != nil {
 					return fmt.Errorf("failed to open data file: %w", err)
@@ -246,6 +246,52 @@ func (lfs *LogStructuredFS) CloseFS() error {
 	return nil
 }
 
+func (lfs *LogStructuredFS) RecoveryIndex() error {
+	// 读取索引文件快照文件，从快照文件里面恢复索引
+	// 不同于 bitcask 对 hint 文件是在 compressor 过程中生成
+	// bitcask 中 hint 文件是在压缩过程中生成 hint 快照
+	// 并不能代表全部即时内存索引状态
+	// vasedb 则完全设计了不同的方案，如果是 close 正常关闭的就会生成 index 文件
+	// 如果数据文件有 index 文件则直接从 index 文件中恢复
+	// 没有就在启动的全局扫描数据文件重新构建索引文件
+
+	lfs.mu.Lock()
+	defer lfs.mu.Unlock()
+	// 构造完整的文件路径
+	filePath := filepath.Join(lfs.directory, indexFileName)
+	if utils.IsExist(filePath) {
+		// 如果存在索引文件就恢复
+		file, err := os.Open(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to open index file: %w", err)
+		}
+		defer file.Close()
+
+		err = recoveryIndex(file, lfs.indexs)
+		if err != nil {
+			return fmt.Errorf("failed to recovery index record: %w", err)
+		}
+
+		return nil
+	}
+
+	// 如果不存在索引文件就从 regions 文件全局扫描恢复
+	err := crashRecoveryIndex(lfs.directory, lfs.indexs)
+	if err != nil {
+		return fmt.Errorf("failed to crash recovery index: %w", err)
+	}
+
+	return nil
+}
+
+func recoveryIndex(_ *os.File, _ []*indexMap) error {
+	return nil
+}
+
+func crashRecoveryIndex(_ string, _ []*indexMap) error {
+	return nil
+}
+
 func validateFileHeader(file *os.File) error {
 	var fileHeader [4]byte
 	n, err := file.Read(fileHeader[:])
@@ -279,7 +325,7 @@ func checkFileSystem(path string) error {
 
 	if len(files) > 0 {
 		for _, file := range files {
-			if !file.IsDir() && strings.HasSuffix(file.Name(), dataFileExtension) {
+			if !file.IsDir() && strings.HasSuffix(file.Name(), fileExtension) {
 				if len(file.Name()) == 8 && strings.HasPrefix(file.Name(), "000") {
 					file, err := os.Open(filepath.Join(path, file.Name()))
 					if err != nil {
@@ -294,8 +340,8 @@ func checkFileSystem(path string) error {
 				}
 			}
 
-			if !file.IsDir() && file.Name() == indexFullFileName {
-				file, err := os.Open(indexFullFileName)
+			if !file.IsDir() && file.Name() == indexFileName {
+				file, err := os.Open(filepath.Join(path, file.Name()))
 				if err != nil {
 					return fmt.Errorf("failed to check index file: %w", err)
 				}
@@ -313,7 +359,7 @@ func checkFileSystem(path string) error {
 }
 
 func newDataFileName(regionID uint64) (string, error) {
-	fileName := fmt.Sprintf("%08d%s", regionID, dataFileExtension)
+	fileName := fmt.Sprintf("%08d%s", regionID, fileExtension)
 	if len(fileName) == 8 && strings.HasPrefix(fileName, "000") {
 		return fileName, nil
 	}
@@ -338,5 +384,5 @@ func dataFileNameToUint64(fileName string) (uint64, error) {
 
 // Uint16ToFileName 将 uint16 转换为文件名格式（如 1 转为 0000001.vsdb）
 func uint64ToDataFileName(number uint64) string {
-	return fmt.Sprintf("%08d%s", number, dataFileExtension)
+	return fmt.Sprintf("%08d%s", number, fileExtension)
 }
