@@ -102,6 +102,11 @@ func (lfs *LogStructuredFS) ChangeReigons() error {
 		return fmt.Errorf("failed to close active file: %w", err)
 	}
 
+	err = lfs.createActiveReigon()
+	if err != nil {
+		return fmt.Errorf("failed to chanage active file: %w", err)
+	}
+
 	return nil
 }
 
