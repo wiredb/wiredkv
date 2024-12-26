@@ -326,7 +326,7 @@ func checkFileSystem(path string) error {
 	if len(files) > 0 {
 		for _, file := range files {
 			if !file.IsDir() && strings.HasSuffix(file.Name(), fileExtension) {
-				if len(file.Name()) == 8 && strings.HasPrefix(file.Name(), "000") {
+				if len(file.Name()) == 8 && strings.HasPrefix(file.Name(), "0") {
 					file, err := os.Open(filepath.Join(path, file.Name()))
 					if err != nil {
 						return fmt.Errorf("failed to check data file: %w", err)
