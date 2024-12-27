@@ -157,7 +157,7 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 					return fmt.Errorf("failed to open data file: %w", err)
 				}
 
-				regionID, err := dataFileNameToUint64(file.Name())
+				regionID, err := parseDataFileName(file.Name())
 				if err != nil {
 					return fmt.Errorf("failed to get regions id: %w", err)
 				}
@@ -374,8 +374,8 @@ func generateFileName(regionID uint64) (string, error) {
 	return "", fmt.Errorf("new region id %d cannot be converted to a valid file name", regionID)
 }
 
-// fileNameToUint16 将文件名（如 0000001.vsdb）中的数字部分转换为 uint16
-func dataFileNameToUint64(fileName string) (uint64, error) {
+// parseDataFileName 将文件名（如 0000001.vsdb）中的数字部分转换为 uint16
+func parseDataFileName(fileName string) (uint64, error) {
 	parts := strings.Split(fileName, ".")
 	if len(parts) != 2 {
 		return 0, fmt.Errorf("invalid file name format: %s", fileName)
@@ -390,7 +390,7 @@ func dataFileNameToUint64(fileName string) (uint64, error) {
 	return uint64(number), nil
 }
 
-// Uint16ToFileName 将 uint16 转换为文件名格式（如 1 转为 0000001.vsdb）
-func uint64ToDataFileName(number uint64) string {
+// formatDataFileName 将 uint16 转换为文件名格式（如 1 转为 0000001.vsdb）
+func formatDataFileName(number uint64) string {
 	return fmt.Sprintf("%08d%s", number, fileExtension)
 }
