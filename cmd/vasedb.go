@@ -131,10 +131,10 @@ func runServer() {
 	})
 	if err != nil {
 		clog.Failed(err)
-	} else {
-		hts.SetupFS(fss)
-		clog.Info("Setup file system was successfully")
 	}
+
+	hts.SetupFS(fss)
+	clog.Info("Setup file system was successfully")
 
 	go func() {
 		err := hts.Startup()

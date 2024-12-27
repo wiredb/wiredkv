@@ -90,6 +90,10 @@ func (s *Segment) ToNumber() *types.Number {
 	return nil
 }
 
+func (s *Segment) TTL() {
+
+}
+
 // 将类型映射为 Kind 的辅助函数
 func toKind(data Serializable) (Kind, error) {
 	switch data.(type) {
