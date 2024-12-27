@@ -114,7 +114,7 @@ func (lfs *LogStructuredFS) createActiveReigon() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
 	lfs.regionID += 1
-	fileName, err := newDataFileName(lfs.regionID)
+	fileName, err := generateFileName(lfs.regionID)
 	if err != nil {
 		return fmt.Errorf("failed to new data file name: %w", err)
 	}
@@ -366,9 +366,9 @@ func checkFileSystem(path string) error {
 	return nil
 }
 
-func newDataFileName(regionID uint64) (string, error) {
+func generateFileName(regionID uint64) (string, error) {
 	fileName := fmt.Sprintf("%08d%s", regionID, fileExtension)
-	if len(fileName) == 8 && strings.HasPrefix(fileName, "000") {
+	if len(fileName) == 8 && strings.HasPrefix(fileName, "0") {
 		return fileName, nil
 	}
 	return "", fmt.Errorf("new region id %d cannot be converted to a valid file name", regionID)
