@@ -176,8 +176,20 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 		// 找到最新数据文件的版本
 		lfs.regionID = regionIds[len(regionIds)-1]
 
-		// 如果最大那个 region 文件没有达到阀值就不用创建新文件
-		// 如果大于就创建新的文件
+		// 如果最大那个 region 文件没有达到阀值就不用创建新文件，如果大于就创建新的文件
+		maxRegionFile := lfs.regions[lfs.regionID]
+		stat, err := maxRegionFile.Stat()
+		if err != nil {
+			return fmt.Errorf("failed to get region file info: %w", err)
+		}
+
+		// 假设阀值为 100MB
+		threshold := int64(1024 * 1024 * 10 * 10)
+		if stat.Size() >= threshold {
+			lfs.createActiveReigon()
+		} else {
+			lfs.active = maxRegionFile
+		}
 	}
 
 	return nil
