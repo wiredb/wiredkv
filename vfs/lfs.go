@@ -175,6 +175,9 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 		})
 		// 找到最新数据文件的版本
 		lfs.regionID = regionIds[len(regionIds)-1]
+
+		// 如果最大那个 region 文件没有达到阀值就不用创建新文件
+		// 如果大于就创建新的文件
 	}
 
 	return nil
