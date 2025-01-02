@@ -253,7 +253,7 @@ func (lfs *LogStructuredFS) recoveryIndex() error {
 
 		err = recoveryIndex(file, lfs.indexs)
 		if err != nil {
-			return fmt.Errorf("failed to recovery index record: %w", err)
+			return fmt.Errorf("failed to recovery index mapping: %w", err)
 		}
 
 		return nil
@@ -343,7 +343,7 @@ func (lfs *LogStructuredFS) ExportSnapshotIndex() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
 
-	// 只是局部使用一次，所以不使用全局字段
+	// 使用局部 Transformer 实例
 	trans := NewTransformer()
 
 	filePath := filepath.Join(lfs.directory, indexFileName)
@@ -353,34 +353,114 @@ func (lfs *LogStructuredFS) ExportSnapshotIndex() error {
 	}
 	defer utils.CloseFile(fd)
 
+	// 写入元数据
 	n, err := fd.Write(dataFileMetadata)
 	if err != nil {
 		return fmt.Errorf("failed to write index file metadata: %w", err)
 	}
 
 	if n != len(dataFileMetadata) {
-		return errors.New("failed to index file metadata write")
+		return errors.New("index file metadata write incomplete")
 	}
 
-	// 遍历每个索引
+	// 遍历分片索引并写入
 	for _, indexs := range lfs.indexs {
-		// 对每个 indexs 进行读锁
 		indexs.mu.RLock()
+		defer indexs.mu.RUnlock()
 		for inum, inode := range indexs.index {
-			bytes, err := serializeIndex(inum, inode)
+			bytes, err := serializedIndex(inum, inode)
 			if err != nil {
-				return fmt.Errorf("failed to serialized index: %w", err)
+				return fmt.Errorf("failed to serialized index (inum: %d): %w", inum, err)
 			}
-			trans.Write(fd, bytes)
+			_, err = trans.Write(fd, bytes)
+			if err != nil {
+				return fmt.Errorf("failed to write serialized index (inum: %d): %w", inum, err)
+			}
 		}
-		indexs.mu.RUnlock()
 	}
 
 	return nil
 }
 
-func recoveryIndex(_ *os.File, _ []*indexMap) error {
-	return nil
+func recoveryIndex(fd *os.File, indexs []*indexMap) error {
+	// 在恢复操作的时候不需要上锁
+	offset := int64(len(dataFileMetadata))
+	trans := NewTransformer()
+
+	finfo, err := fd.Stat()
+	if err != nil {
+		return err
+	}
+
+	type index struct {
+		inum  uint64
+		inode *INode
+	}
+
+	// 共享并行处理的数据
+	nqueue := make(chan index, (finfo.Size()-offset)/48)
+	// 定义一个错误通道，用于捕获 goroutine 中的错误
+	// 只捕获到第一个错误，一旦有错误全局停止直接返回
+	equeue := make(chan error, 1)
+
+	// 定义一个 WaitGroup 来等待所有 goroutine 完成
+	var wg sync.WaitGroup
+
+	// 生产者 goroutine
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer close(nqueue)
+
+		for offset < finfo.Size() {
+			bytes, err := trans.ReadAt(fd, offset, 48)
+			if err != nil {
+				equeue <- fmt.Errorf("failed to read index node: %w", err)
+				return
+			}
+
+			offset += 48
+
+			inum, inode, err := deserializedIndex(bytes)
+			if err != nil {
+				equeue <- fmt.Errorf("failed to deserialize index (inum: %d): %w", inum, err)
+				return
+			}
+
+			nqueue <- index{inum: inum, inode: inode}
+		}
+	}()
+
+	// 消费者 goroutine
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for node := range nqueue {
+			imap := indexs[node.inum%uint64(indexShard)]
+			if imap != nil {
+				// 确保对共享资源访问的线程安全
+				imap.mu.Lock()
+				imap.index[node.inode.RegionID] = node.inode
+				imap.mu.Unlock()
+			} else {
+				equeue <- errors.New("no corresponding index shard")
+				return
+			}
+		}
+	}()
+
+	// 等待所有 goroutine 完成
+	wg.Wait()
+
+	// 判断错误通道是否有值，捕获错误
+	select {
+	case err := <-equeue:
+		close(equeue)
+		return err
+	default:
+		close(equeue)
+		return nil
+	}
 }
 
 func crashRecoveryAllIndex(_ string, _ []*indexMap) error {
@@ -482,7 +562,7 @@ func formatDataFileName(number uint64) string {
 	return fmt.Sprintf("%08d%s", number, fileExtension)
 }
 
-func serializeIndex(inum uint64, inode *INode) ([]byte, error) {
+func serializedIndex(inum uint64, inode *INode) ([]byte, error) {
 	// 创建一个字节缓冲区
 	buf := new(bytes.Buffer)
 
@@ -504,17 +584,18 @@ func serializeIndex(inum uint64, inode *INode) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func deserializeIndex(data []byte) (uint64, *INode, error) {
+func deserializedIndex(data []byte) (uint64, *INode, error) {
 	buf := bytes.NewReader(data)
 	// 反序列化 inum
 	var inum uint64
-	if err := binary.Read(buf, binary.LittleEndian, &inum); err != nil {
+	err := binary.Read(buf, binary.LittleEndian, &inum)
+	if err != nil {
 		return 0, nil, err
 	}
 
 	// 反序列化 INode 的各个字段
 	var inode INode
-	err := binary.Read(buf, binary.LittleEndian, &inode.RegionID)
+	err = binary.Read(buf, binary.LittleEndian, &inode.RegionID)
 	if err != nil {
 		return 0, nil, err
 	}
