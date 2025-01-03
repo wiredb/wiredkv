@@ -19,17 +19,26 @@ const (
 	FsPerm = fs.FileMode(0755)
 	// DefaultConfigJSON configure json string
 	DefaultConfigJSON = `
-{
-	"port": 2468,
-	"path": "/tmp/vasedb",
-	"auth": "",
-	"log_path": "/tmp/vasedb/out.log",
-	"debug": false,
-	"compressor": {
-		"enable": true,
-		"second": 15000
+	{
+		"port": 2068,
+		"mode": "mmap",
+		"path": "/tmp/vasedb",
+		"auth": "password@123",
+		"logpath": "/tmp/vasedb/out.log",
+		"debug": false,
+		"region": {
+			"enable": true,
+			"second": 15000,
+			"threshold": 3
+		},
+		"encryptor": {
+			"enable": false,
+			"secret": "your-static-data-secret"
+		},
+		"compressor": {
+			"enable": false
+		}
 	}
-}
 `
 )
 
@@ -121,12 +130,24 @@ type ServerConfig struct {
 	Port       int        `json:"port"`
 	Path       string     `json:"path"`
 	Debug      bool       `json:"debug"`
-	LogPath    string     `json:"log_path"`
+	LogPath    string     `json:"logging"`
 	Password   string     `json:"auth"`
+	Region     Region     `json:"region"`
+	Encryptor  Encryptor  `json:"encryptor"`
 	Compressor Compressor `json:"compressor"`
 }
 
+type Region struct {
+	Enable    bool  `json:"enable"`
+	Second    int64 `json:"second"`
+	Threshold int64 `json:"threshold"`
+}
+
+type Encryptor struct {
+	Enable bool   `json:"enable"`
+	Secret string `json:"secret"`
+}
+
 type Compressor struct {
-	Enable bool  `json:"enable"`
-	Second int64 `json:"second"`
+	Enable bool `json:"enable"`
 }

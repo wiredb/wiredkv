@@ -1,4 +1,4 @@
-// Copyright 2022 Leon Ding <ding@ibyte.me> https://vasedb.github.io
+// Copyright 2022 Leon Ding <ding@ibyte.me> https://wiredkv.github.io
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// wired kv process logic code
 package cmd
 
 import (
@@ -22,23 +23,23 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/auula/vasedb/clog"
-	"github.com/auula/vasedb/conf"
-	"github.com/auula/vasedb/server"
-	"github.com/auula/vasedb/utils"
-	"github.com/auula/vasedb/vfs"
+	"github.com/auula/wiredkv/clog"
+	"github.com/auula/wiredkv/conf"
+	"github.com/auula/wiredkv/server"
+	"github.com/auula/wiredkv/utils"
+	"github.com/auula/wiredkv/vfs"
 	"github.com/fatih/color"
 )
 
 const (
 	version = "v0.1.1"
-	website = "https://vasedb.github.io"
+	website = "https://wiredkv.github.io"
 )
 
 var (
 	//go:embed banner.txt
 	logo      string
-	greenFont = color.New(color.FgMagenta)
+	greenFont = color.New(color.FgHiYellow)
 	banner    = greenFont.Sprintf(logo, version, website)
 	daemon    = false
 )
@@ -66,8 +67,8 @@ func init() {
 	if fl.auth != conf.Default.Password {
 		conf.Settings.Password = fl.auth
 	} else {
-		// 如果命令行没有传入密码，系统随机生成一串 16 位的密码
-		conf.Settings.Password = utils.RandomString(16)
+		// 如果命令行没有传入密码，系统随机生成一串 20 位的密码
+		conf.Settings.Password = utils.RandomString(20)
 		clog.Infof("The default password is: %s", conf.Settings.Password)
 	}
 
@@ -114,6 +115,7 @@ func runAsDaemon() {
 	}
 
 	clog.Infof("Daemon launched PID: %d", cmd.Process.Pid)
+	os.Exit(0)
 }
 
 func runServer() {
@@ -126,8 +128,9 @@ func runServer() {
 	}
 
 	fss, err := vfs.OpenFS(&vfs.Options{
-		FsPerm: conf.FsPerm,
-		Path:   conf.Settings.Path,
+		FsPerm:    conf.FsPerm,
+		Path:      conf.Settings.Path,
+		Threshold: 3,
 	})
 	if err != nil {
 		clog.Failed(err)
@@ -146,6 +149,7 @@ func runServer() {
 	time.Sleep(500 * time.Millisecond)
 	clog.Infof("HTTP server started at http://%s:%d 🚀", hts.IPv4(), hts.Port())
 
+	// Keep the main process alive
 	select {}
 }
 

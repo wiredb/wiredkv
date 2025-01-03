@@ -50,13 +50,10 @@ func TestConfigLoad(t *testing.T) {
 func TestConfigLoad_Error(t *testing.T) {
 
 	// 创建一个临时目录用于测试
-	tmpDir := t.TempDir() + "/aaa/bbb"
-
-	// 设置 Settings.Path 为临时目录
-	Settings.Path = tmpDir
+	Settings.Path = t.TempDir() + "/aaa/bbb"
 
 	// 创建一个配置文件并写入测试数据
-	configFile := filepath.Join(tmpDir, "test-config.yaml")
+	configFile := filepath.Join(Settings.Path, "test-config.yaml")
 
 	// 调用 Load 函数
 	loadedConfig := new(ServerConfig)
@@ -79,9 +76,17 @@ func TestSavedAsConfig(t *testing.T) {
 		Debug:    true,
 		LogPath:  "/tmp/vasedb/out.log",
 		Password: "password@123",
+		Region: Region{
+			Enable:    true,
+			Second:    15000,
+			Threshold: 3,
+		},
+		Encryptor: Encryptor{
+			Enable: false,
+			Secret: "test-secret",
+		},
 		Compressor: Compressor{
-			Enable: true,
-			Second: 15000,
+			Enable: false,
 		},
 	}
 
@@ -113,9 +118,17 @@ func TestSavedConfig(t *testing.T) {
 		Debug:    true,
 		LogPath:  "/tmp/vasedb/out.log",
 		Password: "password@123",
+		Region: Region{
+			Enable:    true,
+			Second:    15000,
+			Threshold: 3,
+		},
+		Encryptor: Encryptor{
+			Enable: false,
+			Secret: "test-secret",
+		},
 		Compressor: Compressor{
-			Enable: true,
-			Second: 15000,
+			Enable: false,
 		},
 	}
 
@@ -167,14 +180,14 @@ func TestIsDefault(t *testing.T) {
 
 func TestInit(t *testing.T) {
 	t.Run("Test DefaultConfig Unmarshal", func(t *testing.T) {
-		err := Default.Unmarshal([]byte(nil))
+		err := Default.Unmarshal([]byte(DefaultConfigJSON))
 		if err != nil {
 			t.Log(err)
 		}
 	})
 
 	t.Run("Test Settings Unmarshal", func(t *testing.T) {
-		err := Settings.Unmarshal([]byte(nil))
+		err := Settings.Unmarshal([]byte(DefaultConfigJSON))
 		if err != nil {
 			t.Log(err)
 		}
@@ -232,9 +245,17 @@ func TestServerConfig_ToString(t *testing.T) {
 		Debug:    true,
 		LogPath:  "/tmp/vasedb/out.log",
 		Password: "password@123",
+		Region: Region{
+			Enable:    true,
+			Second:    15000,
+			Threshold: 3,
+		},
+		Encryptor: Encryptor{
+			Enable: false,
+			Secret: "test-secret",
+		},
 		Compressor: Compressor{
-			Enable: true,
-			Second: 15000,
+			Enable: false,
 		},
 	}
 
