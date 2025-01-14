@@ -59,8 +59,7 @@ func init() {
 	}
 
 	if fl.debug {
-		conf.Settings.Debug = fl.debug
-		clog.IsDebug = conf.Settings.Debug
+		conf.Settings.Debug, clog.IsDebug = fl.debug, fl.debug
 	}
 
 	// 命令行传入的密码优先级最高

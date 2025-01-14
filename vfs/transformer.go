@@ -93,6 +93,7 @@ func (t *Transformer) Encode(data []byte) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to compress data: %w", err)
 		}
+
 	}
 
 	// 加密数据

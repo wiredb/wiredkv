@@ -6,6 +6,6 @@ type Binary struct {
 	buf bytes.Buffer
 }
 
-func (bin *Binary) ToBytes() []byte {
+func (bin *Binary) ToBSON() []byte {
 	return nil
 }

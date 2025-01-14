@@ -2,6 +2,6 @@ package types
 
 type ZSet struct{}
 
-func (zs *ZSet) ToBytes() []byte {
+func (zs *ZSet) ToBSON() []byte {
 	return nil
 }

@@ -90,7 +90,7 @@ func TestParseSegment(t *testing.T) {
 	valueSize := uint32(len(encodedData))
 
 	// 写入段数据，这里的 VALUE 段是经过处理之后的，所以要计算处理之后长度
-	buf := make([]byte, 26+len(key)+len(encodedData)) // 固定部分 26 字节 + key 和 value 的长度
+	buf := make([]byte, 26+len(key)+len(encodedData)+4) // 固定部分 26 字节 + key 和 value 的长度 + 4 CRC32
 	writeOffset := 0
 
 	// Tombstone (1 字节)
@@ -122,8 +122,8 @@ func TestParseSegment(t *testing.T) {
 	writeOffset += len(key)
 
 	// Value 这个可以被加密和压缩
-	copy(buf[writeOffset:writeOffset+len(encodedData)], encodedData)
-	writeOffset += len(encodedData)
+	copy(buf[writeOffset:writeOffset+int(valueSize)], encodedData)
+	writeOffset += int(valueSize)
 
 	// 计算这条记录的 checksum
 	checksum := crc32.ChecksumIEEE(buf)
@@ -131,7 +131,7 @@ func TestParseSegment(t *testing.T) {
 	// 把计算的 checksum 添加进去
 	checksumBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(checksumBytes, checksum)
-	buf = append(buf, checksumBytes...)
+	copy(buf[writeOffset:writeOffset+4], checksumBytes)
 
 	// 写入文件内容
 	if _, err := tmpFile.Write(buf); err != nil {
@@ -152,7 +152,7 @@ func TestParseSegment(t *testing.T) {
 	t.Logf("inum = %v , seg = %v", inum, seg)
 
 	// 验证解析结果
-	expectedInum := HashSum64(key)
+	expectedInum := InodeNum(key)
 	if inum != expectedInum {
 		t.Errorf("unexpected inum: got %d, want %d", inum, expectedInum)
 	}
@@ -177,8 +177,10 @@ func TestParseSegment(t *testing.T) {
 		t.Errorf("unexpected keySize: got %d, want %d", seg.KeySize, keySize)
 	}
 
-	if string(seg.data) != value {
-		t.Errorf("unexpected data: got %s, want %s", seg.data, value)
+	t.Logf("%s", seg.Value)
+
+	if string(seg.Value) != value {
+		t.Errorf("unexpected data: got %s, want %s", string(seg.Value), string(value))
 	}
 
 }

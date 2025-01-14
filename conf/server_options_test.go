@@ -28,14 +28,14 @@ func TestConfigLoad(t *testing.T) {
 	}
 
 	// 调用 Load 函数
-	loadedConfig := new(ServerConfig)
+	loadedConfig := new(ServerOptions)
 	err = Load(configFile, loadedConfig)
 	if err != nil {
 		t.Fatalf("Error loading config: %v", err)
 	}
 
 	// 检查加载的配置是否正确
-	expectedConfig := &ServerConfig{
+	expectedConfig := &ServerOptions{
 		Port:  8080,
 		Path:  "/test/path",
 		Debug: true,
@@ -56,7 +56,7 @@ func TestConfigLoad_Error(t *testing.T) {
 	configFile := filepath.Join(Settings.Path, "test-config.yaml")
 
 	// 调用 Load 函数
-	loadedConfig := new(ServerConfig)
+	loadedConfig := new(ServerOptions)
 	err := Load(configFile, loadedConfig)
 	if err != nil {
 		t.Log(err)
@@ -69,8 +69,8 @@ func TestSavedAsConfig(t *testing.T) {
 	// 创建一个临时目录用于测试
 	tmpDir := t.TempDir()
 
-	// 创建一个 ServerConfig 实例
-	config := &ServerConfig{
+	// 创建一个 ServerOptions 实例
+	config := &ServerOptions{
 		Port:     8080,
 		Path:     tmpDir,
 		Debug:    true,
@@ -110,8 +110,8 @@ func TestSavedConfig(t *testing.T) {
 
 	os.Mkdir(filepath.Join(tmpDir, "etc"), FsPerm)
 
-	// 创建一个 ServerConfig 实例
-	config := &ServerConfig{
+	// 创建一个 ServerOptions 实例
+	config := &ServerOptions{
 
 		Port:     8080,
 		Path:     tmpDir,
@@ -145,8 +145,8 @@ func TestSavedConfig_Error(t *testing.T) {
 	// 创建一个临时目录用于测试
 	tmpDir := t.TempDir()
 
-	// 创建一个 ServerConfig 空实例
-	var config *ServerConfig = nil
+	// 创建一个 ServerOptions 空实例
+	var config *ServerOptions = nil
 
 	// 调用 Saved 函数
 	err := config.SavedAs(tmpDir)
@@ -195,7 +195,7 @@ func TestInit(t *testing.T) {
 
 }
 
-func TestServerConfig_Marshal(t *testing.T) {
+func TestServerOptions_Marshal(t *testing.T) {
 
 	err := Settings.Unmarshal([]byte(DefaultConfigJSON))
 	if err != nil {
@@ -213,7 +213,7 @@ func TestServerConfig_Marshal(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(Settings, Default) {
-		t.Errorf("ServerConfig.Marshal() = %v, want %v", string(bytes), DefaultConfigJSON)
+		t.Errorf("ServerOptions.Marshal() = %v, want %v", string(bytes), DefaultConfigJSON)
 	}
 
 }
@@ -232,13 +232,13 @@ func TestDefaultConfigInitialization(t *testing.T) {
 
 }
 
-func TestServerConfig_ToString(t *testing.T) {
+func TestServerOptions_ToString(t *testing.T) {
 
 	type fields struct {
-		VaseDB ServerConfig
+		TestDB ServerOptions
 	}
 
-	vdb := ServerConfig{
+	vdb := ServerOptions{
 
 		Port:     8080,
 		Path:     "",
@@ -264,12 +264,12 @@ func TestServerConfig_ToString(t *testing.T) {
 		fields fields
 		want   string
 	}{
-		{name: "successful", fields: fields{VaseDB: vdb}, want: vdb.String()},
+		{name: "successful", fields: fields{TestDB: vdb}, want: vdb.String()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.fields.VaseDB.String(); got != tt.want {
-				t.Errorf("ServerConfig.ToString() = %v, want %v", got, tt.want)
+			if got := tt.fields.TestDB.String(); got != tt.want {
+				t.Errorf("ServerOptions.ToString() = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -2,6 +2,6 @@ package types
 
 type List struct{}
 
-func (list *List) ToBytes() []byte {
+func (list *List) ToBSON() []byte {
 	return nil
 }

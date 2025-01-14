@@ -24,7 +24,7 @@ const (
 		"port": 2468,
 		"mode": "std",
 		"path": "/tmp/vasedb",
-		"auth": "password@123",
+		"auth": "Are we wide open to the world?",
 		"logpath": "/tmp/vasedb/out.log",
 		"debug": false,
 		"region": {
@@ -45,9 +45,9 @@ const (
 
 var (
 	// Settings global configure options
-	Settings *ServerConfig = new(ServerConfig)
+	Settings *ServerOptions = new(ServerOptions)
 	// Default is the default configuration
-	Default *ServerConfig = new(ServerConfig)
+	Default *ServerOptions = new(ServerOptions)
 )
 
 func init() {
@@ -63,24 +63,24 @@ func HasCustom(path string) bool {
 }
 
 type Validator interface {
-	Validate(*ServerConfig) error
+	Validate(*ServerOptions) error
 }
 
 type PortValidator struct{}
 
-func (v PortValidator) Validate(opt *ServerConfig) error {
+func (PortValidator) Validate(opt *ServerOptions) error {
 	return validatePort(opt.Port)
 }
 
 type PathValidator struct{}
 
-func (v PathValidator) Validate(opt *ServerConfig) error {
+func (PathValidator) Validate(opt *ServerOptions) error {
 	return validatePath(opt.Path)
 }
 
 type AuthValidator struct{}
 
-func (v AuthValidator) Validate(opt *ServerConfig) error {
+func (AuthValidator) Validate(opt *ServerOptions) error {
 	return validatePassword(opt.Path)
 }
 
@@ -105,7 +105,7 @@ func validatePassword(password string) error {
 	return nil
 }
 
-func Vaildated(opt *ServerConfig) error {
+func Vaildated(opt *ServerOptions) error {
 	validators := []Validator{
 		PortValidator{},
 		PathValidator{},
@@ -123,7 +123,7 @@ func Vaildated(opt *ServerConfig) error {
 }
 
 // Load through a configuration file
-func Load(file string, opt *ServerConfig) error {
+func Load(file string, opt *ServerOptions) error {
 	_, err := os.Stat(file)
 	if err != nil {
 		return err
@@ -141,45 +141,45 @@ func Load(file string, opt *ServerConfig) error {
 	return v.Unmarshal(opt)
 }
 
-func saved(path string, opt *ServerConfig) error {
+func saved(path string, opt *ServerOptions) error {
 	yamlData, _ := yaml.Marshal(&opt)
 	return os.WriteFile(path, yamlData, FsPerm)
 }
 
-func (opt *ServerConfig) SavedAs(path string) error {
+func (opt *ServerOptions) SavedAs(path string) error {
 	return saved(path, opt)
 }
 
-func (opt *ServerConfig) Saved() error {
+func (opt *ServerOptions) Saved() error {
 	return saved(filepath.Join(opt.Path, fileName+"."+extension), opt)
 }
 
-func (opt *ServerConfig) Unmarshal(data []byte) error {
+func (opt *ServerOptions) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, &opt)
 }
 
-func (opt *ServerConfig) Marshal() ([]byte, error) {
+func (opt *ServerOptions) Marshal() ([]byte, error) {
 	return json.Marshal(opt)
 }
 
-func (opt *ServerConfig) String() string {
+func (opt *ServerOptions) String() string {
 	return toString(opt)
 }
 
-func (opt *ServerConfig) IsCompressionEnabled() bool {
+func (opt *ServerOptions) IsCompressionEnabled() bool {
 	return opt.Compressor.Enable
 }
 
-func (opt *ServerConfig) IsEncryptionEnabled() bool {
+func (opt *ServerOptions) IsEncryptionEnabled() bool {
 	return opt.Encryptor.Enable
 }
 
-func toString(opt *ServerConfig) string {
+func toString(opt *ServerOptions) string {
 	bs, _ := opt.Marshal()
 	return string(bs)
 }
 
-type ServerConfig struct {
+type ServerOptions struct {
 	Port       int        `json:"port"`
 	Path       string     `json:"path"`
 	Debug      bool       `json:"debug"`

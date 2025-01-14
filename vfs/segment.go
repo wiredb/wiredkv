@@ -29,41 +29,57 @@ type Segment struct {
 	CreatedAt uint64
 	KeySize   uint32
 	ValueSize uint32
-	data      []byte
+	Key       []byte
+	Value     []byte
 }
 
 type Serializable interface {
-	ToBytes() []byte
+	ToBSON() []byte
 }
 
 // NewSegment 使用数据类型初始化并返回对应的 Segment
-func NewSegment(data Serializable) (*Segment, error) {
+func NewSegment(key string, data Serializable, ttl uint64) (*Segment, error) {
 	kind, err := toKind(data)
 	if err != nil {
 		return nil, fmt.Errorf("unsupported data type: %w", err)
 	}
 
+	timestamp, expiredAt := uint64(time.Now().Unix()), uint64(0)
+
+	if ttl > 0 {
+		expiredAt = uint64(time.Now().Add(time.Second * time.Duration(ttl)).Unix())
+	}
+
+	// 这个是通过 BSON 编码之后的
+	encodedata := data.ToBSON()
+
 	// 如果类型不匹配，则返回错误
 	return &Segment{
-		Type: kind,
-		data: data.ToBytes(),
+		Type:      kind,
+		Tombstone: 0,
+		CreatedAt: timestamp,
+		ExpiredAt: expiredAt,
+		KeySize:   uint32(len(key)),
+		ValueSize: uint32(len(encodedata)),
+		Key:       []byte(key),
+		Value:     encodedata,
 	}, nil
+
 }
 
-func (s *Segment) Kind() Kind {
-	return s.Type
+func NewTombstoneSegment(key string) *Segment {
+	seg := new(Segment)
+	seg.Tombstone = 1
+	seg.KeySize = uint32(len(key))
+	return seg
+}
+
+func (s *Segment) IsTombstone() bool {
+	return s.Tombstone == 1
 }
 
 func (s *Segment) Size() int {
-	return len(s.data)
-}
-
-func (s *Segment) ToLittleEndian() ([]byte, error) {
-	// 这里直接初始化为小端磁盘存储格式
-	// 日志记录到附加信息序列化
-	// 上层的 lfs 只需要写入对于的记录到文件中就可以
-
-	return nil, nil
+	return len(s.Key) + len(s.Value)
 }
 
 func (s *Segment) ToSet() *types.Set {

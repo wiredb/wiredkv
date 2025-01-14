@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/auula/wiredkv/utils"
 )
@@ -72,37 +71,40 @@ type LogStructuredFS struct {
 	regions   map[uint64]*os.File // Archived files keyed by unique file ID
 }
 
-// 根据某种哈希函数（如简单的模运算）来选择分片
-func (lfs *LogStructuredFS) getShardIndex(inum uint64) *indexMap {
+// AddSegment 会向 LogStructuredFS 虚拟文件系统插入一条 Segment 记录
+func (lfs *LogStructuredFS) AddSegment(inum uint64, seg Segment, ttl uint64) error {
+	// 根据某种哈希函数简单的模运算来选择索引分片
+	shard := lfs.indexs[inum%uint64(indexShard)]
+
+	lfs.mu.Lock()
+	// defer lfs.mu.Unlock() 太丑了这个锁，如果这么写你必须等着函数栈执行完成才能解锁
+	size, err := appendBinaryToFile(lfs.active, &seg)
+	if err != nil {
+		lfs.mu.Unlock()
+		return err
+	}
 	lfs.mu.Unlock()
-	defer lfs.mu.Unlock()
-	return lfs.indexs[inum%uint64(indexShard)]
-}
 
-// 使用 `getShardIndex` 获取分片，并加锁进行操作
-func (lfs *LogStructuredFS) AddSegment(inum uint64, seg Segment, ttl uint64) {
-	shard := lfs.getShardIndex(inum)
+	lfs.mu.Lock()
 	inode := &INode{
-		RegionID: lfs.regionID,
-		Position: lfs.offset,
-		// Length 是通过 segment 计算出来的
-		Length:    0,
-		CreatedAt: uint64(time.Now().Unix()),
-		ExpiredAt: 0,
+		RegionID:  lfs.regionID,
+		Position:  lfs.offset,
+		Length:    size,
+		CreatedAt: seg.CreatedAt,
+		ExpiredAt: seg.ExpiredAt,
 	}
-
-	if ttl > 0 {
-		inode.ExpiredAt = uint64(time.Now().Add(time.Second * time.Duration(ttl)).Unix())
-	}
+	lfs.offset += uint64(size)
+	lfs.mu.Unlock()
 
 	shard.mu.Lock()
 	shard.index[inum] = inode
 	shard.mu.Unlock()
 
+	return nil
 }
 
 func (lfs *LogStructuredFS) GetINode(inum uint64) (*INode, bool) {
-	shard := lfs.getShardIndex(inum)
+	shard := lfs.indexs[inum%uint64(indexShard)]
 	shard.mu.RLock()
 	defer shard.mu.RUnlock()
 	inode, exists := shard.index[inum]
@@ -113,7 +115,7 @@ func (lfs *LogStructuredFS) BatchINodes(inodes ...*INode) {
 
 }
 
-func HashSum64(key string) uint64 {
+func InodeNum(key string) uint64 {
 	h := fnv.New64a()
 	h.Write([]byte(key))
 	return h.Sum64()
@@ -524,7 +526,7 @@ func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) erro
 			imap := indexs[inum%uint64(indexShard)]
 			if imap != nil {
 				// 如果是一条删除操作的记录，就将该记录对应索引删除
-				if segment.Tombstone == 1 {
+				if segment.IsTombstone() {
 					delete(imap.index, inum)
 					continue
 				}
@@ -701,10 +703,11 @@ func readSegment(fd *os.File, offset uint64, bufsize int64) (uint64, *Segment, e
 		return 0, nil, fmt.Errorf("failed to transformer decode value in segment: %w", err)
 	}
 
-	seg.data = decodedData
+	fmt.Printf("%v \n", string(decodedData))
+	seg.Value = decodedData
 
 	// 16. 返回 inum 和 解析后的 Segment 以及 nil 错误
-	return HashSum64(string(keybuf)), &seg, nil
+	return InodeNum(string(keybuf)), &seg, nil
 }
 
 func generateFileName(regionID uint64) (string, error) {
@@ -715,7 +718,7 @@ func generateFileName(regionID uint64) (string, error) {
 	return "", fmt.Errorf("new region id %d cannot be converted to a valid file name", regionID)
 }
 
-// parseDataFileName 将文件名（如 0000001.vsdb）中的数字部分转换为 uint64
+// parseDataFileName 将文件名（如 0000001.wdb）中的数字部分转换为 uint64
 func parseDataFileName(fileName string) (uint64, error) {
 	parts := strings.Split(fileName, ".")
 	if len(parts) != 2 {
@@ -731,7 +734,7 @@ func parseDataFileName(fileName string) (uint64, error) {
 	return uint64(number), nil
 }
 
-// formatDataFileName 将 uint16 转换为文件名格式（如 1 转为 0000001.wlfs）
+// formatDataFileName 将 uint16 转换为文件名格式（如 1 转为 0000001.wdb）
 func formatDataFileName(number uint64) string {
 	return fmt.Sprintf("%08d%s", number, fileExtension)
 }
@@ -811,4 +814,9 @@ func deserializedIndex(data []byte) (uint64, *INode, error) {
 	}
 
 	return inum, &inode, nil
+}
+
+// 开始序列化小端数据，ToLittleEndian(lfs.active,seg)，需要对 seg 进行压缩处理再写入
+func appendBinaryToFile(fd *os.File, seg *Segment) (uint32, error) {
+	return 0, nil
 }

@@ -2,6 +2,6 @@ package types
 
 type Set struct{}
 
-func (s *Set) ToBytes() []byte {
+func (s *Set) ToBSON() []byte {
 	return nil
 }

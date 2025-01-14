@@ -2,6 +2,6 @@ package types
 
 type Tables struct{}
 
-func (tab *Tables) ToBytes() []byte {
+func (tab *Tables) ToBSON() []byte {
 	return nil
 }
