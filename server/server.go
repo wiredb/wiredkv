@@ -63,6 +63,7 @@ type Options struct {
 
 // New 创建一个新的 HTTP 服务器
 func New(opt *Options) (*HttpServer, error) {
+
 	if opt.Port < minPort || opt.Port > maxPort {
 		return nil, errors.New("HTTP server port illegal")
 	}

@@ -81,7 +81,7 @@ func TestParseSegment(t *testing.T) {
 
 	// 数据处理器
 	trans := NewTransformer()
-	trans.SetCompressor(new(SnappyCompressor))
+	trans.SetCompressor(new(Snappy))
 	encodedData, err := trans.Encode([]byte(value))
 	if err != nil {
 		t.Fatalf("failed to encode segment value: %v", err)

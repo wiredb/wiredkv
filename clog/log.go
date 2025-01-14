@@ -113,7 +113,10 @@ func Failed(v ...interface{}) {
 func Failedf(format string, v ...interface{}) {
 	pc, file, line, _ := runtime.Caller(1)
 	function := runtime.FuncForPC(pc)
-	message := fmt.Sprintf("%s:%d %s() %s", file, line, function.Name(), fmt.Sprint(v...))
-	clog.Output(2, errorPrefix+message)
-	panic(message)
+	baseMessage := fmt.Sprintf("%s:%d %s()", file, line, function)
+	fullMessage := fmt.Sprintf(format, v...)
+	finalMessage := fmt.Sprintf("%s %s", baseMessage, fullMessage)
+	// 输出日志并触发 panic
+	clog.Output(2, errorPrefix+finalMessage)
+	panic(finalMessage)
 }

@@ -83,6 +83,7 @@ func init() {
 	clog.Debug(conf.Settings)
 
 	var err error = nil
+	// 验证命令参入的参数，即使有默认配置，命令行参数不受约束
 	err = conf.Vaildated(conf.Settings)
 	if err != nil {
 		clog.Failed(err)
@@ -134,6 +135,12 @@ func runServer() {
 	})
 	if err != nil {
 		clog.Failed(err)
+	}
+
+	if conf.Settings.IsCompressionEnabled() {
+		// 设置文件数据使用 Snappy 压缩算法
+		fss.SetCompressor(vfs.SnappyCompressor)
+		clog.Info("Snappy compressor enabled successfully")
 	}
 
 	hts.SetupFS(fss)

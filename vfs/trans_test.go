@@ -13,7 +13,7 @@ func TestTransformerWithComplexData(t *testing.T) {
 	originalString := "example-data"
 
 	// 启用压缩
-	transformer.SetCompressor(&SnappyCompressor{})
+	transformer.SetCompressor(&Snappy{})
 
 	// 对数据进行编码（压缩 + 加密）
 	encodedData, err := transformer.Encode([]byte(originalString))

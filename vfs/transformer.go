@@ -7,6 +7,8 @@ import (
 	"github.com/golang/snappy"
 )
 
+var SnappyCompressor = new(Snappy)
+
 const (
 	// 使用整数位标志存储状态
 	EnabledEncryption  = 1 << iota // 1: 0001
@@ -126,15 +128,15 @@ func (t *Transformer) Decode(data []byte) ([]byte, error) {
 	return data, nil
 }
 
-type SnappyCompressor struct{}
+type Snappy struct{}
 
-func (s *SnappyCompressor) Compress(data []byte) ([]byte, error) {
+func (s *Snappy) Compress(data []byte) ([]byte, error) {
 	// Snappy 压缩数据
 	compressed := snappy.Encode(nil, data)
 	return compressed, nil
 }
 
-func (s *SnappyCompressor) Decompress(data []byte) ([]byte, error) {
+func (s *Snappy) Decompress(data []byte) ([]byte, error) {
 	// Snappy 解压数据
 	return snappy.Decode(nil, data)
 }

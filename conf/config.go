@@ -3,6 +3,7 @@ package conf
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -20,8 +21,8 @@ const (
 	// DefaultConfigJSON configure json string
 	DefaultConfigJSON = `
 	{
-		"port": 2068,
-		"mode": "mmap",
+		"port": 2468,
+		"mode": "std",
 		"path": "/tmp/vasedb",
 		"auth": "password@123",
 		"logpath": "/tmp/vasedb/out.log",
@@ -61,19 +62,63 @@ func HasCustom(path string) bool {
 	return path != defaultFilePath
 }
 
+type Validator interface {
+	Validate(*ServerConfig) error
+}
+
+type PortValidator struct{}
+
+func (v PortValidator) Validate(opt *ServerConfig) error {
+	return validatePort(opt.Port)
+}
+
+type PathValidator struct{}
+
+func (v PathValidator) Validate(opt *ServerConfig) error {
+	return validatePath(opt.Path)
+}
+
+type AuthValidator struct{}
+
+func (v AuthValidator) Validate(opt *ServerConfig) error {
+	return validatePassword(opt.Path)
+}
+
+func validatePort(port int) error {
+	if port <= 1024 || port >= 65535 {
+		return errors.New("port range must be between 1025 and 65534")
+	}
+	return nil
+}
+
+func validatePath(path string) error {
+	if path == "" {
+		return errors.New("data directory path cannot be empty")
+	}
+	return nil
+}
+
+func validatePassword(password string) error {
+	if password == "" {
+		return errors.New("auth password cannot be empty")
+	}
+	return nil
+}
+
 func Vaildated(opt *ServerConfig) error {
-	if opt.Password == "" {
-		return errors.New("auth password is empty")
+	validators := []Validator{
+		PortValidator{},
+		PathValidator{},
+		AuthValidator{},
 	}
-	if opt.Path == "" {
-		return errors.New("data directory path is empty")
+
+	for _, validator := range validators {
+		err := validator.Validate(opt)
+		if err != nil {
+			return fmt.Errorf("failed to validator server configure: %w", err)
+		}
 	}
-	if !(opt.Port > 1024 && opt.Port < 65535) {
-		return errors.New("port range not legal")
-	}
-	if opt.LogPath == "" {
-		return errors.New("logging output path is empty")
-	}
+
 	return nil
 }
 
@@ -119,6 +164,14 @@ func (opt *ServerConfig) Marshal() ([]byte, error) {
 
 func (opt *ServerConfig) String() string {
 	return toString(opt)
+}
+
+func (opt *ServerConfig) IsCompressionEnabled() bool {
+	return opt.Compressor.Enable
+}
+
+func (opt *ServerConfig) IsEncryptionEnabled() bool {
+	return opt.Encryptor.Enable
 }
 
 func toString(opt *ServerConfig) string {

@@ -38,6 +38,7 @@ var (
 	indexFileName    = "index.wdb"
 	regionThreshold  = int64(1 * GB) // 1GB
 	dataFileMetadata = []byte{0xDB, 0x0, 0x0, 0x1}
+	transformer      = NewTransformer()
 )
 
 type Options struct {
@@ -271,6 +272,14 @@ func (lfs *LogStructuredFS) recoveryIndex() error {
 	}
 
 	return nil
+}
+
+func (lfs *LogStructuredFS) SetCompressor(compressor Compressor) {
+	transformer.SetCompressor(compressor)
+}
+
+func (lfs *LogStructuredFS) SetEncryptor(encryptor Encryptor, secret []byte) error {
+	return transformer.SetEncryptor(encryptor, secret)
 }
 
 func OpenFS(opt *Options) (*LogStructuredFS, error) {
@@ -687,9 +696,7 @@ func readSegment(fd *os.File, offset uint64, bufsize int64) (uint64, *Segment, e
 	}
 
 	// 15. 更新 Segment 数据字段为读取的 valuebuf 并且通过 Transformer 处理之后才能使用
-	trans := NewTransformer()
-	trans.SetCompressor(new(SnappyCompressor))
-	decodedData, err := trans.Decode(valuebuf)
+	decodedData, err := transformer.Decode(valuebuf)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to transformer decode value in segment: %w", err)
 	}
