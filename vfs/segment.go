@@ -50,8 +50,11 @@ func NewSegment(key string, data Serializable, ttl uint64) (*Segment, error) {
 		expiredAt = uint64(time.Now().Add(time.Second * time.Duration(ttl)).Unix())
 	}
 
-	// 这个是通过 BSON 编码之后的
-	encodedata := data.ToBSON()
+	// 这个是通过 transformer 编码之后的
+	encodedata, err := transformer.Encode(data.ToBSON())
+	if err != nil {
+		return nil, fmt.Errorf("transformer encode: %w", err)
+	}
 
 	// 如果类型不匹配，则返回错误
 	return &Segment{
@@ -67,8 +70,9 @@ func NewSegment(key string, data Serializable, ttl uint64) (*Segment, error) {
 
 }
 
-func NewTombstoneSegment(key string) *Segment {
+func NewTombstoneSegment(key []byte) *Segment {
 	seg := new(Segment)
+	seg.Key = key
 	seg.Tombstone = 1
 	seg.KeySize = uint32(len(key))
 	return seg
@@ -79,7 +83,7 @@ func (s *Segment) IsTombstone() bool {
 }
 
 func (s *Segment) Size() int {
-	return len(s.Key) + len(s.Value)
+	return len(s.Value)
 }
 
 func (s *Segment) ToSet() *types.Set {

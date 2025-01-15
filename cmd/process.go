@@ -130,7 +130,7 @@ func runServer() {
 	fss, err := vfs.OpenFS(&vfs.Options{
 		FsPerm:    conf.FsPerm,
 		Path:      conf.Settings.Path,
-		Threshold: 3,
+		Threshold: conf.Settings.Region.Threshold,
 	})
 	if err != nil {
 		clog.Failed(err)
@@ -140,6 +140,11 @@ func runServer() {
 		// 设置文件数据使用 Snappy 压缩算法
 		fss.SetCompressor(vfs.SnappyCompressor)
 		clog.Info("Snappy compressor enabled successfully")
+	}
+
+	if conf.Settings.IsRegionGCEnabled() {
+		fss.StartRegionGC(conf.Settings.RegionGCInterval())
+		clog.Info("Region compressor enabled successfully")
 	}
 
 	hts.SetupFS(fss)

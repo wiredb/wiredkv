@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
@@ -174,6 +175,14 @@ func (opt *ServerOptions) IsEncryptionEnabled() bool {
 	return opt.Encryptor.Enable
 }
 
+func (opt *ServerOptions) IsRegionGCEnabled() bool {
+	return opt.Region.Enable
+}
+
+func (opt *ServerOptions) RegionGCInterval() time.Duration {
+	return time.Duration(opt.Region.Second) * time.Second
+}
+
 func toString(opt *ServerOptions) string {
 	bs, _ := opt.Marshal()
 	return string(bs)
@@ -193,7 +202,7 @@ type ServerOptions struct {
 type Region struct {
 	Enable    bool  `json:"enable"`
 	Second    int64 `json:"second"`
-	Threshold int64 `json:"threshold"`
+	Threshold uint8 `json:"threshold"`
 }
 
 type Encryptor struct {

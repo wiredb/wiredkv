@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/auula/wiredkv/utils"
 )
@@ -26,6 +27,14 @@ const (
 	KB                    // 2^10 = 1024
 	MB                    // 2^20 = 1048576
 	GB                    // 2^30 = 1073741824
+)
+
+type _GC_STATUS = int8 // Region garbage collection status
+
+const (
+	_GC_INIT _GC_STATUS = iota // gc 第一次执行就是这个状态
+	_GC_RUNNING
+	_GC_STOP
 )
 
 var (
@@ -69,6 +78,8 @@ type LogStructuredFS struct {
 	indexs    []*indexMap         // Index mapping for INode references
 	active    *os.File            // Currently active file for writing
 	regions   map[uint64]*os.File // Archived files keyed by unique file ID
+	gcstat    _GC_STATUS
+	ticker    *time.Ticker
 }
 
 // AddSegment 会向 LogStructuredFS 虚拟文件系统插入一条 Segment 记录
@@ -268,12 +279,7 @@ func (lfs *LogStructuredFS) recoveryIndex() error {
 	// 如果数据文件非常大，而且文件非常多，恢复多时间就越长
 	// 如果垃圾回收越频繁，你数据文件就变小，启动时间就越快
 	// 但是如果垃圾回收越频繁，可能会影响到整体数据读取写性能
-	err := crashRecoveryAllIndex(lfs.regions, lfs.indexs)
-	if err != nil {
-		return fmt.Errorf("failed to crash recovery index: %w", err)
-	}
-
-	return nil
+	return crashRecoveryAllIndex(lfs.regions, lfs.indexs)
 }
 
 func (lfs *LogStructuredFS) SetCompressor(compressor Compressor) {
@@ -282,6 +288,33 @@ func (lfs *LogStructuredFS) SetCompressor(compressor Compressor) {
 
 func (lfs *LogStructuredFS) SetEncryptor(encryptor Encryptor, secret []byte) error {
 	return transformer.SetEncryptor(encryptor, secret)
+}
+
+func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
+	if lfs.gcstat != _GC_INIT {
+		return
+	}
+	// 创建一个 ticker，每秒触发一次
+	lfs.ticker = time.NewTicker(cycle_second)
+	// 启动一个 goroutine，不断接收 ticker 通道的消息
+	go func() {
+		for t := range lfs.ticker.C {
+			// 上一个 gc 还在执行就跳过本周期的
+			if lfs.gcstat == _GC_RUNNING {
+				continue
+			}
+
+			// 执行 gc 垃圾回收逻辑
+			fmt.Println("Tick at", t)
+
+			// 修改 gc 停止运行状态
+			lfs.gcstat = _GC_STOP
+		}
+	}()
+}
+
+func (lfs *LogStructuredFS) StopRegionGC() {
+	lfs.ticker.Stop()
 }
 
 func OpenFS(opt *Options) (*LogStructuredFS, error) {
@@ -307,6 +340,8 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 			offset:    uint64(len(dataFileMetadata)),
 			regionID:  0,
 			directory: opt.Path,
+			gcstat:    _GC_INIT,
+			ticker:    nil,
 		}
 
 		for i := 0; i < indexShard; i++ {
@@ -339,6 +374,7 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 	return instance, nil
 }
 
+// 关闭之前一定要检查 gc 是否在执行，如果 gc 在执行千万不要盲目的关闭
 func (lfs *LogStructuredFS) CloseFS() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
@@ -623,90 +659,84 @@ func checkFileSystem(path string) error {
 
 // | DEL 1 | KIND 1 | EAT 8 | CAT 8 | KLEN 4 | VLEN 4 | KEY ? | VALUE ? | CRC32 4 |
 func readSegment(fd *os.File, offset uint64, bufsize int64) (uint64, *Segment, error) {
-	// 先解析头部的 Header 信息
 	buf := make([]byte, bufsize)
 
-	// 从指定的 offset 读取数据
 	_, err := fd.ReadAt(buf, int64(offset))
 	if err != nil {
 		return 0, nil, err
 	}
 
-	// 初始化 Segment 结构
 	var seg Segment
 	readOffset := 0
 
-	// 1. 解析 Tombstone (1 字节)
+	// 解析 Tombstone (1 字节)
 	seg.Tombstone = int8(buf[readOffset])
-	readOffset += 1
+	readOffset++
 
-	// 2. 解析 Type (1 字节)
+	// 解析 Type (1 字节)
 	seg.Type = Kind(buf[readOffset])
-	readOffset += 1
+	readOffset++
 
-	// 3. 解析 ExpiredAt (8 字节，小端格式)
+	// 解析 ExpiredAt (8 字节)
 	seg.ExpiredAt = binary.LittleEndian.Uint64(buf[readOffset : readOffset+8])
 	readOffset += 8
 
-	// 4. 解析 CreatedAt (8 字节，小端格式)
+	// 解析 CreatedAt (8 字节)
 	seg.CreatedAt = binary.LittleEndian.Uint64(buf[readOffset : readOffset+8])
 	readOffset += 8
 
-	// 5. 解析 KeySize (4 字节，小端格式)
+	// 解析 KeySize (4 字节)
 	seg.KeySize = binary.LittleEndian.Uint32(buf[readOffset : readOffset+4])
 	readOffset += 4
 
-	// 7. 解析 ValueSize (4 字节，小端格式)
+	// 解析 ValueSize (4 字节)
 	seg.ValueSize = binary.LittleEndian.Uint32(buf[readOffset : readOffset+4])
 	readOffset += 4
 
-	// 8. 原始 buf 不够用存储 key 的值，从指定的 offset 读取 key 实际的数据
+	// 26 到此结束
+
+	// 读取 Key 数据
 	keybuf := make([]byte, seg.KeySize)
 	_, err = fd.ReadAt(keybuf, int64(offset)+int64(readOffset))
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to parse key in segment: %w", err)
 	}
-
 	readOffset += int(seg.KeySize)
 
-	// 10. 原始 buf 不够用存储 value 的值，从指定的 offset 读取 value 实际的数据
+	// 读取 Value 数据
 	valuebuf := make([]byte, seg.ValueSize)
 	_, err = fd.ReadAt(valuebuf, int64(offset)+int64(readOffset))
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to parse value in segment: %w", err)
 	}
-
 	readOffset += int(seg.ValueSize)
 
-	// 12. 读取 checksum (4 字节)
+	// 读取 checksum (4 字节)
 	checksumBuf := make([]byte, 4)
 	_, err = fd.ReadAt(checksumBuf, int64(offset)+int64(readOffset))
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read checksum in segment: %w", err)
 	}
 
-	// 将 checksum 从字节数组转换为 uint32
+	// 校验 checksum
 	checksum := binary.LittleEndian.Uint32(checksumBuf)
 
-	// 13. 将 key 和 value 数据拼接后计算 CRC32 校验和
 	buf = append(buf, keybuf...)
 	buf = append(buf, valuebuf...)
 
-	// 14. 校验 checksum 是否一致
 	if checksum != crc32.ChecksumIEEE(buf) {
 		return 0, nil, fmt.Errorf("failed to crc32 checksum mismatch: %d", checksum)
 	}
 
-	// 15. 更新 Segment 数据字段为读取的 valuebuf 并且通过 Transformer 处理之后才能使用
+	// 更新 Segment 数据字段为读取的 valuebuf 并且通过 Transformer 处理之后才能使用
 	decodedData, err := transformer.Decode(valuebuf)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to transformer decode value in segment: %w", err)
 	}
 
-	fmt.Printf("%v \n", string(decodedData))
+	seg.Key = keybuf
 	seg.Value = decodedData
 
-	// 16. 返回 inum 和 解析后的 Segment 以及 nil 错误
 	return InodeNum(string(keybuf)), &seg, nil
 }
 
@@ -816,7 +846,66 @@ func deserializedIndex(data []byte) (uint64, *INode, error) {
 	return inum, &inode, nil
 }
 
+func serializedSegment(seg *Segment) ([]byte, error) {
+	// 创建一个字节缓冲区
+	buf := new(bytes.Buffer)
+
+	// 序列化 Segment 字段
+	err := binary.Write(buf, binary.LittleEndian, seg.Tombstone)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write Tombstone: %w", err)
+	}
+
+	err = binary.Write(buf, binary.LittleEndian, seg.Type)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write Type: %w", err)
+	}
+
+	err = binary.Write(buf, binary.LittleEndian, seg.ExpiredAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write ExpiredAt: %w", err)
+	}
+
+	err = binary.Write(buf, binary.LittleEndian, seg.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write CreatedAt: %w", err)
+	}
+
+	err = binary.Write(buf, binary.LittleEndian, seg.KeySize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write KeySize: %w", err)
+	}
+
+	err = binary.Write(buf, binary.LittleEndian, seg.ValueSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write ValueSize: %w", err)
+	}
+
+	// 序列化 Key 和 Value 数据
+	err = binary.Write(buf, binary.LittleEndian, seg.Key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write Key: %w", err)
+	}
+
+	err = binary.Write(buf, binary.LittleEndian, seg.Value)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write Value: %w", err)
+	}
+
+	// 计算 CRC32 校验码
+	checksum := crc32.ChecksumIEEE(buf.Bytes())
+
+	// 将 CRC32 校验码写入字节缓冲区（4 字节）
+	err = binary.Write(buf, binary.LittleEndian, checksum)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write checksum: %w", err)
+	}
+
+	// 返回包含 CRC32 校验码的字节切片
+	return buf.Bytes(), nil
+}
+
 // 开始序列化小端数据，ToLittleEndian(lfs.active,seg)，需要对 seg 进行压缩处理再写入
-func appendBinaryToFile(fd *os.File, seg *Segment) (uint32, error) {
+func appendBinaryToFile(_ *os.File, _ *Segment) (uint32, error) {
 	return 0, nil
 }

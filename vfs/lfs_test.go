@@ -1,8 +1,6 @@
 package vfs
 
 import (
-	"encoding/binary"
-	"hash/crc32"
 	"os"
 	"testing"
 )
@@ -61,126 +59,74 @@ func TestSerializedIndex(t *testing.T) {
 
 }
 
-// 测试 parseSegment
-func TestParseSegment(t *testing.T) {
+// 测试 readSegment 函数
+func TestReadSegment(t *testing.T) {
+	// 构造测试数据
+	seg := &Segment{
+		Tombstone: 0,
+		Type:      1,
+		ExpiredAt: 123456789,
+		CreatedAt: 987654321,
+		KeySize:   3,
+		ValueSize: 5,
+		Key:       []byte("key"),
+		Value:     []byte("value"),
+	}
+
+	// 将 Segment 数据转化为字节数组
+	bytes, err := serializedSegment(seg)
+	if err != nil {
+		t.Fatalf("failed to serialized segment:%v", err)
+	}
+
 	// 创建临时文件
-	tmpFile, err := os.CreateTemp("", "segment_test")
+	tmpFile, err := os.CreateTemp("", "testfile")
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name()) // 确保测试结束时删除临时文件
+	defer os.Remove(tmpFile.Name())
 
-	// 准备测试数据
-	tombstone := int8(1)
-	segType := Kind(2)
-	expiredAt := uint64(1688991234)
-	createdAt := uint64(1688999999)
-	key := "example-key"
-	keySize := uint32(len(key))
-	value := "example-value"
-
-	// 数据处理器
-	trans := NewTransformer()
-	trans.SetCompressor(new(Snappy))
-	encodedData, err := trans.Encode([]byte(value))
+	// 写入测试数据
+	_, err = tmpFile.Write(bytes)
 	if err != nil {
-		t.Fatalf("failed to encode segment value: %v", err)
+		t.Fatalf("failed to write test data to temp file: %v", err)
 	}
 
-	valueSize := uint32(len(encodedData))
-
-	// 写入段数据，这里的 VALUE 段是经过处理之后的，所以要计算处理之后长度
-	buf := make([]byte, 26+len(key)+len(encodedData)+4) // 固定部分 26 字节 + key 和 value 的长度 + 4 CRC32
-	writeOffset := 0
-
-	// Tombstone (1 字节)
-	buf[writeOffset] = byte(tombstone)
-	writeOffset += 1
-
-	// Type (1 字节)
-	buf[writeOffset] = byte(segType)
-	writeOffset += 1
-
-	// ExpiredAt (8 字节)
-	binary.LittleEndian.PutUint64(buf[writeOffset:writeOffset+8], expiredAt)
-	writeOffset += 8
-
-	// CreatedAt (8 字节)
-	binary.LittleEndian.PutUint64(buf[writeOffset:writeOffset+8], createdAt)
-	writeOffset += 8
-
-	// KeySize (4 字节)
-	binary.LittleEndian.PutUint32(buf[writeOffset:writeOffset+4], keySize)
-	writeOffset += 4
-
-	// ValueSize (4 字节)
-	binary.LittleEndian.PutUint32(buf[writeOffset:writeOffset+4], valueSize)
-	writeOffset += 4
-
-	// Key
-	copy(buf[writeOffset:writeOffset+len(key)], key)
-	writeOffset += len(key)
-
-	// Value 这个可以被加密和压缩
-	copy(buf[writeOffset:writeOffset+int(valueSize)], encodedData)
-	writeOffset += int(valueSize)
-
-	// 计算这条记录的 checksum
-	checksum := crc32.ChecksumIEEE(buf)
-
-	// 把计算的 checksum 添加进去
-	checksumBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(checksumBytes, checksum)
-	copy(buf[writeOffset:writeOffset+4], checksumBytes)
-
-	// 写入文件内容
-	if _, err := tmpFile.Write(buf); err != nil {
-		t.Fatalf("failed to write to temp file: %v", err)
-	}
-
-	// 测试 parseSegment 函数
+	// 使用 readSegment 读取并测试数据
 	offset := uint64(0)
-
-	// 仅解析固定部分，一条 segment 格式如下：
-	// | DEL 1 | KIND 1 | EAT 8 | CAT 8 | KLEN 4 | VLEN 4 | KEY ? | VALUE ? | CRC32 4 |
-	inum, seg, err := readSegment(tmpFile, offset, 26)
-
+	inum, segment, err := readSegment(tmpFile, offset, 26)
 	if err != nil {
-		t.Fatalf("failed to parse segment: %v", err)
+		t.Fatalf("expected no error, but got: %v", err)
 	}
 
-	t.Logf("inum = %v , seg = %v", inum, seg)
-
-	// 验证解析结果
-	expectedInum := InodeNum(key)
-	if inum != expectedInum {
-		t.Errorf("unexpected inum: got %d, want %d", inum, expectedInum)
+	// 校验 Segment 数据
+	if segment.Tombstone != seg.Tombstone {
+		t.Errorf("expected Tombstone to be %d, but got: %d", seg.Tombstone, segment.Tombstone)
+	}
+	if segment.Type != seg.Type {
+		t.Errorf("expected Type to be %d, but got: %d", seg.Type, segment.Type)
+	}
+	if segment.ExpiredAt != seg.ExpiredAt {
+		t.Errorf("expected ExpiredAt to be %d, but got: %d", seg.ExpiredAt, segment.ExpiredAt)
+	}
+	if segment.CreatedAt != seg.CreatedAt {
+		t.Errorf("expected CreatedAt to be %d, but got: %d", seg.CreatedAt, segment.CreatedAt)
+	}
+	if segment.KeySize != seg.KeySize {
+		t.Errorf("expected KeySize to be %d, but got: %d", seg.KeySize, segment.KeySize)
+	}
+	if segment.ValueSize != seg.ValueSize {
+		t.Errorf("expected ValueSize to be %d, but got: %d", seg.ValueSize, segment.ValueSize)
+	}
+	if string(segment.Key) != string(seg.Key) {
+		t.Errorf("expected Key to be %s, but got: %s", string(seg.Key), string(segment.Key))
+	}
+	if string(segment.Value) != string(seg.Value) {
+		t.Errorf("expected Value to be %s, but got: %s", string(seg.Value), string(segment.Value))
 	}
 
-	if seg.Tombstone != tombstone {
-		t.Errorf("unexpected tombstone: got %d, want %d", seg.Tombstone, tombstone)
+	// 校验返回的 inode number (InodeNum)
+	if inum != InodeNum(string(seg.Key)) {
+		t.Errorf("expected InodeNum to be '%s', but got: %d", seg.Key, inum)
 	}
-
-	if seg.Type != segType {
-		t.Errorf("unexpected type: got %d, want %d", seg.Type, segType)
-	}
-
-	if seg.ExpiredAt != expiredAt {
-		t.Errorf("unexpected expiredAt: got %d, want %d", seg.ExpiredAt, expiredAt)
-	}
-
-	if seg.CreatedAt != createdAt {
-		t.Errorf("unexpected createdAt: got %d, want %d", seg.CreatedAt, createdAt)
-	}
-
-	if seg.KeySize != keySize {
-		t.Errorf("unexpected keySize: got %d, want %d", seg.KeySize, keySize)
-	}
-
-	t.Logf("%s", seg.Value)
-
-	if string(seg.Value) != value {
-		t.Errorf("unexpected data: got %s, want %s", string(seg.Value), string(value))
-	}
-
 }
