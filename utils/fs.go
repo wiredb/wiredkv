@@ -16,6 +16,7 @@ func IsExist(dirPath string) bool {
 }
 
 // IsDir check if the path is a directory
+// !IsDir 就可以检查是否为文件
 func IsDir(path string) bool {
 	s, err := os.Stat(path)
 	if err != nil {

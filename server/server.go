@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"sync/atomic"
 	"time"
 
 	"github.com/auula/wiredkv/clog"
@@ -50,20 +49,19 @@ func init() {
 }
 
 type HttpServer struct {
-	s      *http.Server
-	closed int32
-	port   int
+	serv *http.Server
+	port int
 }
 
 type Options struct {
 	Port int
 	Auth string
+	// 可以考虑 CertMagic 自动管理证书并启动 HTTPS 服务
 	// certs *tls.Config
 }
 
 // New 创建一个新的 HTTP 服务器
 func New(opt *Options) (*HttpServer, error) {
-
 	if opt.Port < minPort || opt.Port > maxPort {
 		return nil, errors.New("HTTP server port illegal")
 	}
@@ -73,19 +71,17 @@ func New(opt *Options) (*HttpServer, error) {
 	}
 
 	hs := HttpServer{
-		s: &http.Server{
+		serv: &http.Server{
 			Handler:      root,
 			Addr:         net.JoinHostPort(ipv4, strconv.Itoa(opt.Port)),
 			WriteTimeout: timeout,
 			ReadTimeout:  timeout,
 		},
-		port:   opt.Port,
-		closed: 0,
+		port: opt.Port,
 	}
 
 	// 开启 HTTP Keep-Alive 长连接
-	hs.s.SetKeepAlivesEnabled(true)
-	atomic.StoreInt32(&hs.closed, 0)
+	hs.serv.SetKeepAlivesEnabled(true)
 
 	return &hs, nil
 }
@@ -105,36 +101,26 @@ func (hs *HttpServer) IPv4() string {
 
 // Startup blocking goroutine
 func (hs *HttpServer) Startup() error {
-	if hs.closed == 1 {
-		return errors.New("http server has started")
-	}
 	if storage == nil {
 		return errors.New("file storage system is not initialized")
 	}
 
-	atomic.StoreInt32(&hs.closed, 1)
-
 	// 这个函数是一个阻塞函数
-	err := hs.s.ListenAndServe()
+	err := hs.serv.ListenAndServe()
 	if err != nil {
 		return fmt.Errorf("failed to start http api server :%w", err)
 	}
 
-	return hs.s.ListenAndServe()
+	return nil
 }
 
 func (hs *HttpServer) Shutdown() error {
-	if hs.closed == 0 {
-		return errors.New("http server not started")
-	}
-
 	// 先关闭 http 服务器停止接受数据请求
-	err := hs.s.Shutdown(context.Background())
+	err := hs.serv.Shutdown(context.Background())
 	if err != nil && err != http.ErrServerClosed {
 		// 这里发生了错误，外层处理这个错误时也要关闭文件存储系统
 		return err
 	}
-	atomic.StoreInt32(&hs.closed, 0)
 
 	// 再关闭文件存储系统
 	if storage != nil {

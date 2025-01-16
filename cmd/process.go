@@ -39,7 +39,7 @@ const (
 var (
 	//go:embed banner.txt
 	logo      string
-	greenFont = color.New(color.FgHiYellow)
+	greenFont = color.New(color.FgHiRed)
 	banner    = greenFont.Sprintf(logo, version, website)
 	daemon    = false
 )
@@ -93,7 +93,7 @@ func init() {
 		clog.Failed(err)
 	}
 
-	clog.Info("Initialized log file output successfully")
+	clog.Info("Logging output initialized successfully")
 }
 
 func StartApp() {
@@ -139,16 +139,16 @@ func runServer() {
 	if conf.Settings.IsCompressionEnabled() {
 		// 设置文件数据使用 Snappy 压缩算法
 		fss.SetCompressor(vfs.SnappyCompressor)
-		clog.Info("Snappy compressor enabled successfully")
+		clog.Info("Snappy compression activated successfully")
 	}
 
 	if conf.Settings.IsRegionGCEnabled() {
 		fss.StartRegionGC(conf.Settings.RegionGCInterval())
-		clog.Info("Region compressor enabled successfully")
+		clog.Info("Region compression activated successfully")
 	}
 
 	hts.SetupFS(fss)
-	clog.Info("Setup file system was successfully")
+	clog.Info("File system setup completed successfully")
 
 	go func() {
 		err := hts.Startup()

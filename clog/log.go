@@ -3,12 +3,12 @@ package clog
 import (
 	"fmt"
 	"io"
-	"io/fs"
 	"log"
 	"os"
 	"runtime"
 
 	"github.com/fatih/color"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
@@ -27,10 +27,6 @@ var (
 	debugPrefix = debugColor.Sprintf("[DEBUG]\t")
 
 	IsDebug = false
-	caw     = os.O_CREATE | os.O_APPEND | os.O_WRONLY
-
-	// fix: clog import cycle not allowed.
-	permissions = fs.FileMode(0755)
 )
 
 var (
@@ -40,10 +36,10 @@ var (
 
 func init() {
 	// 总共有两套日志记录器
-	// [VASEDB:C] 为主进程记录器记录正常运行状态日志信息
-	// [VASEDB:D] 为辅助记录器记录为 Debug 模式下的日志信息
+	// [WIREDKV:C] 为主进程记录器记录正常运行状态日志信息
+	// [WIREDKV:D] 为辅助记录器记录为 Debug 模式下的日志信息
 	clog = newLogger(os.Stdout, "["+processName+":C] ", log.Ldate|log.Ltime)
-	// [VASEDB:D] 只能输出日志信息到标准输出中
+	// [WIREDKV:D] 只能输出日志信息到标准输出中
 	dlog = newLogger(os.Stdout, "["+processName+":D] ", log.Ldate|log.Ltime|log.Lshortfile)
 }
 
@@ -56,13 +52,17 @@ func multipleLogger(out io.Writer, prefix string, flag int) {
 }
 
 func SetOutput(path string) error {
-	// 如果已经存在了就直接追加,不存在就创建
-	file, err := os.OpenFile(path, caw, permissions)
-	if err != nil {
-		return err
+	// 使用 lumberjack 设置日志轮转
+	lumberjackLogger := &lumberjack.Logger{
+		Filename:   path,
+		MaxSize:    10,   // 每个日志文件最大 10 MB
+		MaxBackups: 3,    // 最多保留 3 个备份
+		MaxAge:     7,    // 日志文件最多保留 7 天
+		Compress:   true, // 启用压缩
 	}
+
 	// 正常模式的日志记录需要输出到控制台和日志文件中
-	multipleLogger(io.MultiWriter(os.Stdout, file), "["+processName+":C] ", log.Ldate|log.Ltime)
+	multipleLogger(io.MultiWriter(os.Stdout, lumberjackLogger), "["+processName+":C] ", log.Ldate|log.Ltime)
 	return nil
 }
 
@@ -113,10 +113,8 @@ func Failed(v ...interface{}) {
 func Failedf(format string, v ...interface{}) {
 	pc, file, line, _ := runtime.Caller(1)
 	function := runtime.FuncForPC(pc)
-	baseMessage := fmt.Sprintf("%s:%d %s()", file, line, function)
-	fullMessage := fmt.Sprintf(format, v...)
-	finalMessage := fmt.Sprintf("%s %s", baseMessage, fullMessage)
+	message := fmt.Sprintf("%s:%d %s() %s", file, line, function.Name(), fmt.Sprint(v...))
 	// 输出日志并触发 panic
-	clog.Output(2, errorPrefix+finalMessage)
-	panic(finalMessage)
+	clog.Output(2, errorPrefix+message)
+	panic(message)
 }

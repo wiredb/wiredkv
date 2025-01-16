@@ -18,6 +18,11 @@ var (
 	allowMethod  = []string{"GET", "POST", "DELETE", "PUT"}
 )
 
+// http://192.168.101.225:2468/{types}/{key}
+// POST 创建 http://192.168.101.225:2468/zset/user-01-score
+// PUT  更新 http://192.168.101.225:2468/zset/user-01-score
+// GET  获取 http://192.168.101.225:2468/table/user-01-shop-cart
+
 func init() {
 	root = mux.NewRouter()
 	root.Use(authMiddleware)
@@ -26,7 +31,7 @@ func init() {
 
 type ResponseBody struct {
 	Code    int           `json:"code"`
-	Time    string        `json:"time"`
+	Time    string        `json:"time,omitempty"`
 	Result  []interface{} `json:"result,omitempty"`
 	Message string        `json:"message,omitempty"`
 }
@@ -38,7 +43,7 @@ func okResponse(w http.ResponseWriter, code int, result []interface{}, message s
 
 	resp := ResponseBody{
 		Code:    code,
-		Time:    time.Now().Format(time.RFC3339),
+		Time:    time.Now().Format(time.RFC3339Nano),
 		Result:  result,
 		Message: message,
 	}
@@ -53,7 +58,7 @@ func action(w http.ResponseWriter, r *http.Request) {
 		types.Tables{},
 		types.Tables{},
 	}
-	okResponse(w, http.StatusOK, tables, "Request processed successfully!")
+	okResponse(w, http.StatusOK, tables, "request processed successfully!")
 }
 
 func unauthorizedResponse(w http.ResponseWriter, message string) {
@@ -63,6 +68,7 @@ func unauthorizedResponse(w http.ResponseWriter, message string) {
 
 	resp := ResponseBody{
 		Code:    http.StatusUnauthorized,
+		Time:    time.Now().Format(time.RFC3339Nano),
 		Message: message,
 	}
 
@@ -75,7 +81,7 @@ func unauthorizedResponse(w http.ResponseWriter, message string) {
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("auth")
-		clog.Debugf("HTTP request header authorization: %s", authHeader)
+		clog.Debugf("HTTP request header authorization: %v", r.Header)
 
 		// 获取客户端 IP 地址
 		ip := r.Header.Get("X-Forwarded-For")
@@ -86,7 +92,7 @@ func authMiddleware(next http.Handler) http.Handler {
 		// 检查认证
 		if authHeader != authPassword {
 			clog.Warnf("Unauthorized access attempt from client %s", ip)
-			unauthorizedResponse(w, "Access is authorised!")
+			unauthorizedResponse(w, "access not authorised!")
 			return
 		}
 

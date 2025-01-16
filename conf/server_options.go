@@ -24,9 +24,9 @@ const (
 	{
 		"port": 2468,
 		"mode": "std",
-		"path": "/tmp/vasedb",
+		"path": "/tmp/wiredkv",
 		"auth": "Are we wide open to the world?",
-		"logpath": "/tmp/vasedb/out.log",
+		"logpath": "/tmp/wiredkv/out.log",
 		"debug": false,
 		"region": {
 			"enable": true,
@@ -192,7 +192,7 @@ type ServerOptions struct {
 	Port       int        `json:"port"`
 	Path       string     `json:"path"`
 	Debug      bool       `json:"debug"`
-	LogPath    string     `json:"logging"`
+	LogPath    string     `json:"logpath"`
 	Password   string     `json:"auth"`
 	Region     Region     `json:"region"`
 	Encryptor  Encryptor  `json:"encryptor"`

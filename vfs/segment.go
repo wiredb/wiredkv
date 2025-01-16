@@ -45,7 +45,6 @@ func NewSegment(key string, data Serializable, ttl uint64) (*Segment, error) {
 	}
 
 	timestamp, expiredAt := uint64(time.Now().Unix()), uint64(0)
-
 	if ttl > 0 {
 		expiredAt = uint64(time.Now().Add(time.Second * time.Duration(ttl)).Unix())
 	}
@@ -82,8 +81,8 @@ func (s *Segment) IsTombstone() bool {
 	return s.Tombstone == 1
 }
 
-func (s *Segment) Size() int {
-	return len(s.Value)
+func (s *Segment) Size() uint32 {
+	return 26 + s.KeySize + s.ValueSize + 4
 }
 
 func (s *Segment) ToSet() *types.Set {

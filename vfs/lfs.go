@@ -38,7 +38,6 @@ const (
 )
 
 var (
-	once             sync.Once
 	indexShard       = 5
 	instance         *LogStructuredFS
 	fsPerm           = fs.FileMode(0755)
@@ -71,15 +70,16 @@ type indexMap struct {
 
 // LogStructuredFS represents the virtual file storage system.
 type LogStructuredFS struct {
-	mu        sync.Mutex
-	offset    uint64
-	regionID  uint64
-	directory string
-	indexs    []*indexMap
-	active    *os.File
-	regions   map[uint64]*os.File
-	gcstat    GC_STATUS
-	gcdone    chan struct{}
+	mu         sync.Mutex
+	offset     uint64
+	regionID   uint64
+	directory  string
+	indexs     []*indexMap
+	active     *os.File
+	regions    map[uint64]*os.File
+	gcstate    GC_STATUS
+	gcdone     chan struct{}
+	dirtyPoint uint64
 }
 
 // AddSegment 会向 LogStructuredFS 虚拟文件系统插入一条 Segment 记录
@@ -87,24 +87,21 @@ func (lfs *LogStructuredFS) AddSegment(inum uint64, seg Segment, ttl uint64) err
 	// 根据某种哈希函数简单的模运算来选择索引分片
 	shard := lfs.indexs[inum%uint64(indexShard)]
 
-	lfs.mu.Lock()
-	// defer lfs.mu.Unlock() 太丑了这个锁，如果这么写你必须等着函数栈执行完成才能解锁
-	size, err := appendBinaryToFile(lfs.active, &seg)
+	err := appendBinaryToFile(lfs.active, &seg)
 	if err != nil {
 		lfs.mu.Unlock()
 		return err
 	}
-	lfs.mu.Unlock()
 
 	lfs.mu.Lock()
 	inode := &INode{
 		RegionID:  lfs.regionID,
 		Position:  lfs.offset,
-		Length:    size,
+		Length:    seg.Size(),
 		CreatedAt: seg.CreatedAt,
 		ExpiredAt: seg.ExpiredAt,
 	}
-	lfs.offset += uint64(size)
+	lfs.offset += uint64(seg.Size())
 	lfs.mu.Unlock()
 
 	shard.mu.Lock()
@@ -156,8 +153,6 @@ func (lfs *LogStructuredFS) ChangeRegions() error {
 }
 
 func (lfs *LogStructuredFS) createActiveRegion() error {
-	lfs.mu.Lock()
-	defer lfs.mu.Unlock()
 	lfs.regionID += 1
 	fileName, err := generateFileName(lfs.regionID)
 	if err != nil {
@@ -192,10 +187,6 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 		return fmt.Errorf("failed to read directory: %w", err)
 	}
 
-	if len(files) <= 0 {
-		return lfs.createActiveRegion()
-	}
-
 	for _, file := range files {
 		if !file.IsDir() && strings.HasSuffix(file.Name(), fileExtension) {
 			regions, err := os.Open(filepath.Join(lfs.directory, file.Name()))
@@ -211,36 +202,43 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 		}
 	}
 
-	var regionIds []uint64
-	for v := range lfs.regions {
-		regionIds = append(regionIds, v)
-	}
-	// 对 regionIds 切片从小到大排序
-	sort.Slice(regionIds, func(i, j int) bool {
-		return regionIds[i] < regionIds[j]
-	})
-	// 找到最新数据文件的版本
-	lfs.regionID = regionIds[len(regionIds)-1]
-
-	// 如果最大那个 region 文件没有达到阀值就不用创建新文件，如果大于就创建新的文件
-	active, ok := lfs.regions[lfs.regionID]
-	if !ok {
-		return fmt.Errorf("region file not found for region id: %d", lfs.regionID)
-	}
-	stat, err := active.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to get region file info: %w", err)
-	}
-
-	if stat.Size() >= regionThreshold {
-		return lfs.createActiveRegion()
-	} else {
-		offset, err := active.Seek(0, io.SeekEnd)
-		if err != nil {
-			return fmt.Errorf("failed to get region file offset: %w", err)
+	// 只有数据文件大于 1 时才找到最大的那个文件
+	if len(lfs.regions) >= 1 {
+		var regionIds []uint64
+		for v := range lfs.regions {
+			regionIds = append(regionIds, v)
 		}
-		lfs.active = active
-		lfs.offset = uint64(offset)
+		// 对 regionIds 切片从小到大排序
+		sort.Slice(regionIds, func(i, j int) bool {
+			return regionIds[i] < regionIds[j]
+		})
+
+		// 找到最新数据文件的版本
+		lfs.regionID = regionIds[len(regionIds)-1]
+
+		// 如果最大那个 region 文件没有达到阀值就不用创建新文件，如果大于就创建新的文件
+		active, ok := lfs.regions[lfs.regionID]
+		if !ok {
+			return fmt.Errorf("region file not found for region id: %d", lfs.regionID)
+		}
+		stat, err := active.Stat()
+		if err != nil {
+			return fmt.Errorf("failed to get region file info: %w", err)
+		}
+
+		if stat.Size() >= regionThreshold {
+			return lfs.createActiveRegion()
+		} else {
+			offset, err := active.Seek(0, io.SeekEnd)
+			if err != nil {
+				return fmt.Errorf("failed to get region file offset: %w", err)
+			}
+			lfs.active = active
+			lfs.offset = uint64(offset)
+		}
+	} else {
+		// 如果是空文件夹就创建的一个可写的数据文件
+		return lfs.createActiveRegion()
 	}
 
 	return nil
@@ -291,38 +289,36 @@ func (lfs *LogStructuredFS) SetEncryptor(encryptor Encryptor, secret []byte) err
 }
 
 func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
-	if lfs.gcstat != GC_INIT {
+	if lfs.gcstate != GC_INIT {
 		return
 	}
-
 	// 创建一个 ticker，每秒触发一次
 	ticker := time.NewTicker(cycle_second)
 	// 控制这个垃圾回收 goruntine 正常退出
 	lfs.gcdone = make(chan struct{}, 1)
-
 	// 启动一个 goroutine，不断接收 ticker 通道的消息
 	go func() {
 		defer ticker.Stop()
 		for {
 			select {
-			case t := <-ticker.C:
+			case <-ticker.C:
 				// 上一个 gc 还在执行就跳过本周期的
-				if lfs.gcstat == GC_RUNNING {
+				if lfs.gcstate == GC_RUNNING {
 					continue
 				}
 
 				// 执行 gc 垃圾回收逻辑
-				fmt.Println("Tick at", t)
+				lfs.dirtyPoint = 0
 
 				// 修改 gc 停止运行状态
-				lfs.gcstat = GC_STOP
+				lfs.gcstate = GC_STOP
 			case <-lfs.gcdone:
 				// 如果 gc 正在运行延迟 gc 退出
 				// 防止正在执行的 gc 就被中断了导致产生了脏数据
-				for lfs.gcstat == GC_RUNNING {
+				for lfs.gcstate == GC_RUNNING {
 					time.Sleep(3 * time.Second)
 				}
-				lfs.gcstat = GC_INIT
+				lfs.gcstate = GC_INIT
 				return
 			}
 		}
@@ -330,66 +326,51 @@ func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
 }
 
 func (lfs *LogStructuredFS) StopRegionGC() {
-	if lfs.gcstat == GC_RUNNING || lfs.gcstat == GC_STOP {
+	if lfs.gcstate == GC_RUNNING || lfs.gcstate == GC_STOP {
 		lfs.gcdone <- struct{}{}
 		close(lfs.gcdone)
 	}
 }
 
 func (lfs *LogStructuredFS) RegionGCStatus() GC_STATUS {
-	return lfs.gcstat
+	return lfs.gcstate
 }
 
 func OpenFS(opt *Options) (*LogStructuredFS, error) {
-	var top_err error
-	once.Do(func() {
-		if instance != nil {
-			return
+	// single region max size = 255GB
+	regionThreshold = int64(opt.Threshold) * GB
+
+	err := checkFileSystem(opt.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	fsPerm = opt.FsPerm
+	instance = &LogStructuredFS{
+		indexs:    make([]*indexMap, indexShard),
+		regions:   make(map[uint64]*os.File, 10),
+		offset:    uint64(len(dataFileMetadata)),
+		regionID:  0,
+		directory: opt.Path,
+		gcstate:   GC_INIT,
+	}
+
+	for i := 0; i < indexShard; i++ {
+		instance.indexs[i] = &indexMap{
+			mu:    sync.RWMutex{},
+			index: make(map[uint64]*INode, 100000),
 		}
+	}
 
-		// single region max size = 255GB
-		regionThreshold = int64(opt.Threshold) * GB
+	// 先对已有的数据文件执行恢复操作，并且初始化内存中的数据版本号
+	err = instance.recoverRegions()
+	if err != nil {
+		return nil, fmt.Errorf("failed to recover data regions: %w", err)
+	}
 
-		err := checkFileSystem(opt.Path)
-		if err != nil {
-			top_err = err
-			return
-		}
-
-		fsPerm = opt.FsPerm
-		instance = &LogStructuredFS{
-			indexs:    make([]*indexMap, indexShard),
-			regions:   make(map[uint64]*os.File, 10),
-			offset:    uint64(len(dataFileMetadata)),
-			regionID:  0,
-			directory: opt.Path,
-			gcstat:    GC_INIT,
-		}
-
-		for i := 0; i < indexShard; i++ {
-			instance.indexs[i] = &indexMap{
-				mu:    sync.RWMutex{},
-				index: make(map[uint64]*INode, 100000),
-			}
-		}
-
-		// 先对已有的数据文件执行恢复操作，并且初始化内存中的数据版本号
-		err = instance.recoverRegions()
-		if err != nil {
-			top_err = fmt.Errorf("failed to recover data regions: %w", err)
-			return
-		}
-
-		err = instance.recoveryIndex()
-		if err != nil {
-			top_err = fmt.Errorf("failed to recover regions index: %w", err)
-			return
-		}
-
-	})
-
-	if top_err != nil {
-		return nil, fmt.Errorf("failed to open file system: %w", top_err)
+	err = instance.recoveryIndex()
+	if err != nil {
+		return nil, fmt.Errorf("failed to recover regions index: %w", err)
 	}
 
 	// 单例子模式，但是挡不住其他包通过 new(LogStructuredFS) 也能创建一个实例，那这样根本不起作用了
@@ -647,7 +628,7 @@ func checkFileSystem(path string) error {
 	if len(files) > 0 {
 		for _, file := range files {
 			if !file.IsDir() && strings.HasSuffix(file.Name(), fileExtension) {
-				if len(file.Name()) == 8 && strings.HasPrefix(file.Name(), "0") {
+				if strings.HasPrefix(file.Name(), "0") {
 					file, err := os.Open(filepath.Join(path, file.Name()))
 					if err != nil {
 						return fmt.Errorf("failed to check data file: %w", err)
@@ -764,9 +745,11 @@ func readSegment(fd *os.File, offset uint64, bufsize int64) (uint64, *Segment, e
 
 func generateFileName(regionID uint64) (string, error) {
 	fileName := fmt.Sprintf("%08d%s", regionID, fileExtension)
-	if len(fileName) == 8 && strings.HasPrefix(fileName, "0") {
+	// 验证 regionID 是否以 0 开头（仅对 8 位数有效）
+	if strings.HasPrefix(fileName, "0") {
 		return fileName, nil
 	}
+	// 超出目前的设置数据文件个数范围就抛出异常
 	return "", fmt.Errorf("new region id %d cannot be converted to a valid file name", regionID)
 }
 
@@ -928,6 +911,6 @@ func serializedSegment(seg *Segment) ([]byte, error) {
 }
 
 // 开始序列化小端数据，ToLittleEndian(lfs.active,seg)，需要对 seg 进行压缩处理再写入
-func appendBinaryToFile(_ *os.File, _ *Segment) (uint32, error) {
-	return 0, nil
+func appendBinaryToFile(_ *os.File, _ *Segment) error {
+	return nil
 }
