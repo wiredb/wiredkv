@@ -29,12 +29,12 @@ const (
 	GB                    // 2^30 = 1073741824
 )
 
-type _GC_STATUS = int8 // Region garbage collection status
+type GC_STATUS = int8 // Region garbage collection status
 
 const (
-	_GC_INIT _GC_STATUS = iota // gc 第一次执行就是这个状态
-	_GC_RUNNING
-	_GC_STOP
+	GC_INIT GC_STATUS = iota // gc 第一次执行就是这个状态
+	GC_STOP
+	GC_RUNNING
 )
 
 var (
@@ -75,11 +75,11 @@ type LogStructuredFS struct {
 	offset    uint64
 	regionID  uint64
 	directory string
-	indexs    []*indexMap         // Index mapping for INode references
-	active    *os.File            // Currently active file for writing
-	regions   map[uint64]*os.File // Archived files keyed by unique file ID
-	gcstat    _GC_STATUS
-	ticker    *time.Ticker
+	indexs    []*indexMap
+	active    *os.File
+	regions   map[uint64]*os.File
+	gcstat    GC_STATUS
+	gcdone    chan struct{}
 }
 
 // AddSegment 会向 LogStructuredFS 虚拟文件系统插入一条 Segment 记录
@@ -291,34 +291,53 @@ func (lfs *LogStructuredFS) SetEncryptor(encryptor Encryptor, secret []byte) err
 }
 
 func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
-	if lfs.gcstat != _GC_INIT {
+	if lfs.gcstat != GC_INIT {
 		return
 	}
+
 	// 创建一个 ticker，每秒触发一次
-	lfs.ticker = time.NewTicker(cycle_second)
+	ticker := time.NewTicker(cycle_second)
+	// 控制这个垃圾回收 goruntine 正常退出
+	lfs.gcdone = make(chan struct{}, 1)
+
 	// 启动一个 goroutine，不断接收 ticker 通道的消息
 	go func() {
-		for t := range lfs.ticker.C {
-			// 上一个 gc 还在执行就跳过本周期的
-			if lfs.gcstat == _GC_RUNNING {
-				continue
+		defer ticker.Stop()
+		for {
+			select {
+			case t := <-ticker.C:
+				// 上一个 gc 还在执行就跳过本周期的
+				if lfs.gcstat == GC_RUNNING {
+					continue
+				}
+
+				// 执行 gc 垃圾回收逻辑
+				fmt.Println("Tick at", t)
+
+				// 修改 gc 停止运行状态
+				lfs.gcstat = GC_STOP
+			case <-lfs.gcdone:
+				// 如果 gc 正在运行延迟 gc 退出
+				// 防止正在执行的 gc 就被中断了导致产生了脏数据
+				for lfs.gcstat == GC_RUNNING {
+					time.Sleep(3 * time.Second)
+				}
+				lfs.gcstat = GC_INIT
+				return
 			}
-
-			// 执行 gc 垃圾回收逻辑
-			fmt.Println("Tick at", t)
-
-			// 修改 gc 停止运行状态
-			lfs.gcstat = _GC_STOP
 		}
 	}()
 }
 
 func (lfs *LogStructuredFS) StopRegionGC() {
-	if lfs.gcstat == _GC_RUNNING || lfs.gcstat == _GC_STOP {
-		lfs.gcstat = _GC_INIT
-		lfs.ticker.Stop()
-		lfs.ticker = nil
+	if lfs.gcstat == GC_RUNNING || lfs.gcstat == GC_STOP {
+		lfs.gcdone <- struct{}{}
+		close(lfs.gcdone)
 	}
+}
+
+func (lfs *LogStructuredFS) RegionGCStatus() GC_STATUS {
+	return lfs.gcstat
 }
 
 func OpenFS(opt *Options) (*LogStructuredFS, error) {
@@ -344,8 +363,7 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 			offset:    uint64(len(dataFileMetadata)),
 			regionID:  0,
 			directory: opt.Path,
-			gcstat:    _GC_INIT,
-			ticker:    nil,
+			gcstat:    GC_INIT,
 		}
 
 		for i := 0; i < indexShard; i++ {
@@ -407,7 +425,7 @@ func (lfs *LogStructuredFS) ExportSnapshotIndex() error {
 	defer lfs.mu.Unlock()
 
 	filePath := filepath.Join(lfs.directory, indexFileName)
-	fd, err := os.OpenFile(filePath, RWCA, fsPerm)
+	fd, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, fsPerm)
 	if err != nil {
 		return fmt.Errorf("failed to generate index snapshot file: %w", err)
 	}
