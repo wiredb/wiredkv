@@ -314,7 +314,11 @@ func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
 }
 
 func (lfs *LogStructuredFS) StopRegionGC() {
-	lfs.ticker.Stop()
+	if lfs.gcstat == _GC_RUNNING || lfs.gcstat == _GC_STOP {
+		lfs.gcstat = _GC_INIT
+		lfs.ticker.Stop()
+		lfs.ticker = nil
+	}
 }
 
 func OpenFS(opt *Options) (*LogStructuredFS, error) {
