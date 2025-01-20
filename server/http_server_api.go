@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/auula/wiredkv/clog"
@@ -27,8 +28,8 @@ var (
 
 func init() {
 	root = mux.NewRouter()
-	root.Use(authMiddleware)
 	root.HandleFunc("/", action).Methods(allowMethod...)
+	root.Use(authMiddleware)
 }
 
 type ResponseBody struct {
@@ -79,32 +80,43 @@ func unauthorizedResponse(w http.ResponseWriter, message string) {
 	}
 }
 
-// 中间件函数，进行 BasicAuth 鉴权
+// 中间件函数，进行 Basic Auth 鉴权
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("auth")
+		// 使用标准 Auth 头
+		token := r.Header.Get("Auth")
 		clog.Debugf("HTTP request header authorization: %v", r.Header)
 
 		// 获取客户端 IP 地址
 		ip := r.Header.Get("X-Forwarded-For")
 		if ip == "" {
 			ip = r.RemoteAddr
-			for _, allowd := range allowIpList {
-				if allowd != ip {
-					unauthorizedResponse(w, fmt.Sprintf("your ip %s address not allow!", ip))
-					return
+		}
+
+		// 检查 IP 白名单
+		isAllowedIP := false
+		if len(allowIpList) > 0 {
+			for _, allowedIP := range allowIpList {
+				if strings.Split(ip, ":")[0] == allowedIP {
+					isAllowedIP = true
+					break
 				}
 			}
 		}
+		if !isAllowedIP {
+			clog.Warnf("Unauthorized IP address: %s", ip)
+			unauthorizedResponse(w, fmt.Sprintf("Your IP %s is not allowed!", ip))
+			return
+		}
 
-		// 检查认证
-		if authHeader != authPassword {
+		if token != authPassword {
 			clog.Warnf("Unauthorized access attempt from client %s", ip)
-			unauthorizedResponse(w, "access not authorised!")
+			unauthorizedResponse(w, "Access not authorised!")
 			return
 		}
 
 		clog.Infof("Client %s authorized successfully", ip)
 		next.ServeHTTP(w, r)
+
 	})
 }

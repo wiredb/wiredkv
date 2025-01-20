@@ -70,11 +70,17 @@ func NewSegment(key string, data Serializable, ttl uint64) (*Segment, error) {
 }
 
 func NewTombstoneSegment(key []byte) *Segment {
-	seg := new(Segment)
-	seg.Key = key
-	seg.Tombstone = 1
-	seg.KeySize = uint32(len(key))
-	return seg
+	timestamp, expiredAt := uint64(time.Now().Unix()), uint64(0)
+	return &Segment{
+		Type:      Unknown,
+		Tombstone: 1,
+		CreatedAt: timestamp,
+		ExpiredAt: expiredAt,
+		KeySize:   uint32(len(key)),
+		ValueSize: 0,
+		Key:       []byte(key),
+		Value:     []byte{},
+	}
 }
 
 func (s *Segment) IsTombstone() bool {
@@ -82,6 +88,7 @@ func (s *Segment) IsTombstone() bool {
 }
 
 func (s *Segment) Size() uint32 {
+	// 计算一整块记录的大小，+4 CRC 校验码占用 4 个字节
 	return 26 + s.KeySize + s.ValueSize + 4
 }
 

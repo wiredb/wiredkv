@@ -51,19 +51,15 @@ func multipleLogger(out io.Writer, prefix string, flag int) {
 	clog = log.New(out, prefix, flag)
 }
 
-func SetOutput(path string) error {
-	// 使用 lumberjack 设置日志轮转
-	lumberjackLogger := &lumberjack.Logger{
-		Filename:   path,
+func SetOutput(path string) {
+	// 正常模式的日志记录需要输出到控制台和日志文件中
+	multipleLogger(io.MultiWriter(os.Stdout, &lumberjack.Logger{
+		Filename:   path, // 使用 lumberjack 设置日志轮转
 		MaxSize:    10,   // 每个日志文件最大 10 MB
 		MaxBackups: 3,    // 最多保留 3 个备份
 		MaxAge:     7,    // 日志文件最多保留 7 天
 		Compress:   true, // 启用压缩
-	}
-
-	// 正常模式的日志记录需要输出到控制台和日志文件中
-	multipleLogger(io.MultiWriter(os.Stdout, lumberjackLogger), "["+processName+":C] ", log.Ldate|log.Ltime)
-	return nil
+	}), "["+processName+":C] ", log.Ldate|log.Ltime)
 }
 
 func Error(v ...interface{}) {

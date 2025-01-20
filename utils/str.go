@@ -5,15 +5,16 @@ import (
 	"strings"
 )
 
+// Charset defines the set of characters to be used in generating random strings
 const Charset = "#$@!abcdefghijklmnpqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ123456789"
 
-// TrimDaemon 从 os.Args 中移除 "-daemon" 参数
+// TrimDaemon removes the "-daemon" or "--daemon" arguments from os.Args
 func TrimDaemon(args []string) []string {
 	var newArgs []string
 
-	// 遍历 args 切片
+	// Iterate through the args slice
 	for i := 1; i < len(args); i++ {
-		// 当发现参数是符合标准时跳过当前参数
+		// Skip the current argument if it matches the daemon flags
 		if args[i] == "-daemon" || args[i] == "--daemon" {
 			continue
 		}
@@ -23,16 +24,16 @@ func TrimDaemon(args []string) []string {
 	return newArgs
 }
 
-// SplitArgs 处理命令行参数以 = 分割
+// SplitArgs splits command-line arguments by "=" if present
 func SplitArgs(args []string) []string {
 	var newArgs []string
 
 	for i := 1; i < len(args); i++ {
-		// 分割 args 中的元素，否则命令行解析错误
+		// Split elements in args by "=" to ensure proper command-line parsing
 		if strings.Contains(args[i], "=") && strings.Count(args[i], "=") == 1 {
 			newArgs = append(newArgs, strings.Split(args[i], "=")...)
 		} else {
-			// 过滤掉 == 不合法过滤掉
+			// Skip elements with multiple "=" as they are invalid
 			if strings.Count(args[i], "=") > 1 {
 				continue
 			}
@@ -43,10 +44,10 @@ func SplitArgs(args []string) []string {
 	return newArgs
 }
 
-// RandomString 返回指定长度的字符串
+// RandomString returns a string of the specified length composed of characters from Charset
 func RandomString(length int) string {
-	result := make([]byte, length)
-	for i := 0; i < length; i++ {
+	result := make([]byte, length-1)
+	for i := 0; i < length-1; i++ {
 		result[i] = Charset[rand.Intn(len(Charset))]
 	}
 	return string(result)

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/auula/wiredkv/clog"
 	"github.com/auula/wiredkv/utils"
 )
 
@@ -39,7 +40,6 @@ const (
 
 var (
 	indexShard       = 5
-	instance         *LogStructuredFS
 	fsPerm           = fs.FileMode(0755)
 	fileExtension    = ".wdb"
 	indexFileName    = "index.wdb"
@@ -51,7 +51,7 @@ var (
 type Options struct {
 	Path      string
 	FsPerm    os.FileMode
-	Threshold uint8 // 这个的大小会影响到垃圾回收执行的时间
+	Threshold uint8
 }
 
 // INode represents a file system node with metadata.
@@ -64,13 +64,13 @@ type INode struct {
 }
 
 type indexMap struct {
-	mu    sync.RWMutex      // 每个分片使用独立的锁
-	index map[uint64]*INode // 存储映射
+	mu    sync.RWMutex
+	index map[uint64]*INode
 }
 
 // LogStructuredFS represents the virtual file storage system.
 type LogStructuredFS struct {
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	offset      uint64
 	regionID    uint64
 	directory   string
@@ -79,20 +79,18 @@ type LogStructuredFS struct {
 	regions     map[uint64]*os.File
 	gcstate     GC_STATUS
 	gcdone      chan struct{}
-	dirtyRegion []uint64
+	dirtyRegion []*os.File
 }
 
-// AddSegment 会向 LogStructuredFS 虚拟文件系统插入一条 Segment 记录
-func (lfs *LogStructuredFS) AddSegment(inum uint64, seg Segment, ttl uint64) error {
-	// 根据某种哈希函数简单的模运算来选择索引分片
-	shard := lfs.indexs[inum%uint64(indexShard)]
-
-	err := appendBinaryToFile(lfs.active, &seg)
+// AddSegment inserts a Segment record into the LogStructuredFS virtual file system.
+func (lfs *LogStructuredFS) AddSegment(inum uint64, seg Segment) error {
+	// Append data to the active region with a lock.
+	err := appendDataWithLock(&lfs.mu, lfs.active, &seg)
 	if err != nil {
-		lfs.mu.Unlock()
 		return err
 	}
 
+	// Update the inode metadata within a critical section.
 	lfs.mu.Lock()
 	inode := &INode{
 		RegionID:  lfs.regionID,
@@ -104,19 +102,18 @@ func (lfs *LogStructuredFS) AddSegment(inum uint64, seg Segment, ttl uint64) err
 	lfs.offset += uint64(seg.Size())
 	lfs.mu.Unlock()
 
+	// Use a read lock to prevent conflicts during index updates.
+	lfs.mu.RLock()
+	defer lfs.mu.RUnlock()
+
+	// Select an index shard based on the hash function and update it.
+	// To avoid locking the entire index, only the relevant shard is locked.
+	shard := lfs.indexs[inum%uint64(indexShard)]
 	shard.mu.Lock()
 	shard.index[inum] = inode
 	shard.mu.Unlock()
 
 	return nil
-}
-
-func (lfs *LogStructuredFS) GetINode(inum uint64) (*INode, bool) {
-	shard := lfs.indexs[inum%uint64(indexShard)]
-	shard.mu.RLock()
-	defer shard.mu.RUnlock()
-	inode, exists := shard.index[inum]
-	return inode, exists
 }
 
 func (lfs *LogStructuredFS) BatchINodes(inodes ...*INode) {
@@ -129,24 +126,20 @@ func InodeNum(key string) uint64 {
 	return h.Sum64()
 }
 
-func (lfs *LogStructuredFS) ChangeRegions() error {
+func (lfs *LogStructuredFS) changeRegions() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
 
-	err := utils.CloseFile(lfs.active)
+	err := lfs.active.Sync()
 	if err != nil {
-		return fmt.Errorf("failed to close active file: %w", err)
+		return fmt.Errorf("failed to change active regions: %w", err)
 	}
 
-	file, err := os.Open(filepath.Join(lfs.directory, formatDataFileName(lfs.regionID)))
-	if err != nil {
-		return fmt.Errorf("failed to change active file read only: %w", err)
-	}
-	lfs.regions[lfs.regionID] = file
+	lfs.regions[lfs.regionID] = lfs.active
 
 	err = lfs.createActiveRegion()
 	if err != nil {
-		return fmt.Errorf("failed to chanage active file: %w", err)
+		return fmt.Errorf("failed to chanage active regions: %w", err)
 	}
 
 	return nil
@@ -180,8 +173,7 @@ func (lfs *LogStructuredFS) createActiveRegion() error {
 }
 
 func (lfs *LogStructuredFS) recoverRegions() error {
-	lfs.mu.Lock()
-	defer lfs.mu.Unlock()
+	// 恢复单线程不需要加锁
 	files, err := os.ReadDir(lfs.directory)
 	if err != nil {
 		return fmt.Errorf("failed to read directory: %w", err)
@@ -189,16 +181,18 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 
 	for _, file := range files {
 		if !file.IsDir() && strings.HasSuffix(file.Name(), fileExtension) {
-			regions, err := os.Open(filepath.Join(lfs.directory, file.Name()))
-			if err != nil {
-				return fmt.Errorf("failed to open data file: %w", err)
-			}
+			if strings.HasPrefix(file.Name(), "0") {
+				regions, err := os.OpenFile(filepath.Join(lfs.directory, file.Name()), os.O_RDWR, fsPerm)
+				if err != nil {
+					return fmt.Errorf("failed to open data file: %w", err)
+				}
 
-			regionID, err := parseDataFileName(file.Name())
-			if err != nil {
-				return fmt.Errorf("failed to get regions id: %w", err)
+				regionID, err := parseDataFileName(file.Name())
+				if err != nil {
+					return fmt.Errorf("failed to get regions id: %w", err)
+				}
+				lfs.regions[regionID] = regions
 			}
-			lfs.regions[regionID] = regions
 		}
 	}
 
@@ -244,21 +238,23 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 	return nil
 }
 
-// recoveryIndex 会对磁盘上的数据文件执行恢复索引操作，步骤如下：
-// 读取索引文件快照文件，从快照文件里面恢复索引
-// 不同于 bitcask 对 hint 文件是在 compressor 过程中生成
-// bitcask 中 hint 文件是在压缩过程中生成 hint 快照
-// 并不能代表全部即时内存索引状态
-// vasedb 则完全设计了不同的方案，如果是 close 正常关闭的就会生成 index 文件
-// 如果数据文件有 index 文件则直接从 index 文件中恢复
-// 没有就在启动的全局扫描数据文件重新构建索引文件
+// recoveryIndex performs index recovery operations on data files stored on disk.
+// Steps:
+//  1. Read the index snapshot file to restore the index.
+//  2. Unlike bitcask, where hint files are generated during the compressor process,
+//     in bitcask, hint files are created during compression but do not represent
+//     the full state of the in-memory index.
+//  3. wiredkv adopts a completely different design. If the system was closed normally,
+//     an index file is generated upon closure.
+//  4. If the data file has an associated index file, the index is restored directly
+//     from the index file.
+//  5. If no index file exists, a global scan of the data files is performed at startup
+//     to reconstruct the index file.
 func (lfs *LogStructuredFS) recoveryIndex() error {
-	lfs.mu.Lock()
-	defer lfs.mu.Unlock()
-	// 构造完整的文件路径
+	// Construct the full file path
 	filePath := filepath.Join(lfs.directory, indexFileName)
 	if utils.IsExist(filePath) {
-		// 如果存在索引文件就恢复
+		// If the index file exists, restore it
 		file, err := os.Open(filePath)
 		if err != nil {
 			return fmt.Errorf("failed to open index file: %w", err)
@@ -267,16 +263,16 @@ func (lfs *LogStructuredFS) recoveryIndex() error {
 
 		err = recoveryIndex(file, lfs.indexs)
 		if err != nil {
-			return fmt.Errorf("failed to recovery index mapping: %w", err)
+			return fmt.Errorf("failed to recover index mapping: %w", err)
 		}
 
 		return nil
 	}
 
-	// 如果不存在索引文件就从 regions 文件全局扫描恢复
-	// 如果数据文件非常大，而且文件非常多，恢复多时间就越长
-	// 如果垃圾回收越频繁，你数据文件就变小，启动时间就越快
-	// 但是如果垃圾回收越频繁，可能会影响到整体数据读取写性能
+	// If the index file does not exist, recover by globally scanning the regions files
+	// If the data files are very large and numerous, recovery time increases significantly.
+	// Frequent garbage collection reduces the size of data files and speeds up startup time.
+	// However, frequent garbage collection may negatively impact overall read/write performance.
 	return crashRecoveryAllIndex(lfs.regions, lfs.indexs)
 }
 
@@ -289,47 +285,42 @@ func (lfs *LogStructuredFS) SetEncryptor(encryptor Encryptor, secret []byte) err
 }
 
 func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
+	// Return if the garbage collector is not in the initial state.
 	if lfs.gcstate != GC_INIT {
 		return
 	}
-	// 创建一个 ticker，每秒触发一次
+
+	// Create a ticker that triggers at the specified interval.
 	ticker := time.NewTicker(cycle_second)
-	// 控制这个垃圾回收 goruntine 正常退出
+	// Channel to control the graceful exit of the garbage collection goroutine.
 	lfs.gcdone = make(chan struct{}, 1)
-	// 启动一个 goroutine，不断接收 ticker 通道的消息
+
+	// Start a goroutine to continuously receive messages from the ticker channel.
 	go func() {
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				// 上一个 gc 还在执行就跳过本周期的
+				// Skip this cycle if the previous garbage collection is still running.
 				if lfs.gcstate == GC_RUNNING {
 					continue
 				}
 
-				// 执行 gc 垃圾回收逻辑
-				if len(lfs.regions) >= 3 {
-					for v := range lfs.regions {
-						lfs.dirtyRegion = append(lfs.dirtyRegion, v)
-					}
-					// 对 regionIds 切片从小到大排序
-					sort.Slice(lfs.dirtyRegion, func(i, j int) bool {
-						return lfs.dirtyRegion[i] < lfs.dirtyRegion[j]
-					})
-					// 执行对旧数据文件的压缩
-					compressorDirtyRegion(lfs.dirtyRegion[:1], lfs.indexs, lfs.active)
-				} else {
-
+				// Execute the garbage collection logic.
+				err := lfs.compressDirtyRegion()
+				if err != nil {
+					clog.Warnf("failed to compress dirty region: %s", err)
 				}
 
-				// 修改 gc 停止运行状态
+				// Update the state to indicate garbage collection has stopped.
 				lfs.gcstate = GC_STOP
 			case <-lfs.gcdone:
-				// 如果 gc 正在运行延迟 gc 退出
-				// 防止正在执行的 gc 就被中断了导致产生了脏数据
+				// If garbage collection is running, delay its exit to prevent dirty data
+				// from being generated due to interrupted operations.
 				for lfs.gcstate == GC_RUNNING {
 					time.Sleep(3 * time.Second)
 				}
+				// Reset the garbage collector state to the initial state.
 				lfs.gcstate = GC_INIT
 				return
 			}
@@ -349,7 +340,7 @@ func (lfs *LogStructuredFS) RegionGCStatus() GC_STATUS {
 }
 
 func OpenFS(opt *Options) (*LogStructuredFS, error) {
-	// single region max size = 255GB
+	// Single region max size = 255GB
 	regionThreshold = int64(opt.Threshold) * GB
 
 	err := checkFileSystem(opt.Path)
@@ -358,7 +349,8 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 	}
 
 	fsPerm = opt.FsPerm
-	instance = &LogStructuredFS{
+	instance := &LogStructuredFS{
+		mu:        sync.RWMutex{},
 		indexs:    make([]*indexMap, indexShard),
 		regions:   make(map[uint64]*os.File, 10),
 		offset:    uint64(len(dataFileMetadata)),
@@ -374,7 +366,7 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 		}
 	}
 
-	// 先对已有的数据文件执行恢复操作，并且初始化内存中的数据版本号
+	// First, perform recovery operations on existing data files and initialize the in-memory data version number
 	err = instance.recoverRegions()
 	if err != nil {
 		return nil, fmt.Errorf("failed to recover data regions: %w", err)
@@ -385,46 +377,43 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 		return nil, fmt.Errorf("failed to recover regions index: %w", err)
 	}
 
-	// 单例子模式，但是挡不住其他包通过 new(LogStructuredFS) 也能创建一个实例，那这样根本不起作用了
+	// Singleton pattern, but other packages can still create an instance with new(LogStructuredFS), which makes this ineffective
 	return instance, nil
 }
 
-// 关闭之前一定要检查 gc 是否在执行，如果 gc 在执行千万不要盲目的关闭
+// Before closing, always check if GC (garbage collection) is executing.
+// If GC is executing, do not close blindly.
 func (lfs *LogStructuredFS) CloseFS() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
 	for _, file := range lfs.regions {
-		err := utils.CloseFile(file)
+		err := utils.FlushToDisk(file)
 		if err != nil {
 			return fmt.Errorf("failed to close region file: %w", err)
 		}
 	}
 
-	err := utils.CloseFile(lfs.active)
-	if err != nil {
-		return fmt.Errorf("failed to close active region: %w", err)
-	}
-
-	// 如果有 index 文件的快照，就从 index 文件快照进行恢复，如果没有就全局扫描
+	// If there is a snapshot of the index file, recover from the snapshot.
+	// Otherwise, perform a global scan.
 	return lfs.ExportSnapshotIndex()
 }
 
-// ExportSnapshotIndex 是正常程序退出是所做的操作，导出内存索引快照到磁盘文件
-// 当前的设计方案对于内存资源较少的系统有限制，
-// 例如 RAM 512 MB < 1GB，如果 1GB 快照不能全部序列化到磁盘上，
-// 映射大文件到内存可能不是一个好的选择，因为它会占用大量的虚拟内存空间，会出现 swap 交换内存页。
+// ExportSnapshotIndex is the operation performed during a normal program exit.
+// exporting the in-memory index snapshot to a file on disk.
+// The current design has limitations for systems with low memory resources,
+// such as those with RAM of 512 MB < 1 GB.
+// If a 1 GB snapshot cannot be fully serialized to disk,
+// mapping large files into memory may not be a good choice,
+// as it consumes a significant amount of virtual memory space and may lead to
+// swapping memory pages to disk.
 func (lfs *LogStructuredFS) ExportSnapshotIndex() error {
-	lfs.mu.Lock()
-	defer lfs.mu.Unlock()
-
 	filePath := filepath.Join(lfs.directory, indexFileName)
 	fd, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, fsPerm)
 	if err != nil {
 		return fmt.Errorf("failed to generate index snapshot file: %w", err)
 	}
-	defer utils.CloseFile(fd)
+	defer utils.FlushToDisk(fd)
 
-	// 写入元数据
 	n, err := fd.Write(dataFileMetadata)
 	if err != nil {
 		return fmt.Errorf("failed to write index file metadata: %w", err)
@@ -434,11 +423,10 @@ func (lfs *LogStructuredFS) ExportSnapshotIndex() error {
 		return errors.New("index file metadata write incomplete")
 	}
 
-	// 遍历分片索引并写入
-	for _, indexs := range lfs.indexs {
-		indexs.mu.RLock()
-		defer indexs.mu.RUnlock()
-		for inum, inode := range indexs.index {
+	for _, imap := range lfs.indexs {
+		imap.mu.RLock()
+		defer imap.mu.RUnlock()
+		for inum, inode := range imap.index {
 			bytes, err := serializedIndex(inum, inode)
 			if err != nil {
 				return fmt.Errorf("failed to serialized index (inum: %d): %w", inum, err)
@@ -454,7 +442,6 @@ func (lfs *LogStructuredFS) ExportSnapshotIndex() error {
 }
 
 func recoveryIndex(fd *os.File, indexs []*indexMap) error {
-	// 在恢复操作的时候不需要上锁
 	offset := int64(len(dataFileMetadata))
 
 	finfo, err := fd.Stat()
@@ -467,16 +454,11 @@ func recoveryIndex(fd *os.File, indexs []*indexMap) error {
 		inode *INode
 	}
 
-	// 共享并行处理的数据
 	nqueue := make(chan index, (finfo.Size()-offset)/48)
-	// 定义一个错误通道，用于捕获 goroutine 中的错误
-	// 只捕获到第一个错误，一旦有错误全局停止直接返回
 	equeue := make(chan error, 1)
 
-	// 定义一个 WaitGroup 来等待所有 goroutine 完成
 	var wg sync.WaitGroup
 
-	// 生产者 goroutine
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -502,7 +484,6 @@ func recoveryIndex(fd *os.File, indexs []*indexMap) error {
 		}
 	}()
 
-	// 消费者 goroutine
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -511,21 +492,20 @@ func recoveryIndex(fd *os.File, indexs []*indexMap) error {
 			if imap != nil {
 				imap.index[node.inum] = node.inode
 			} else {
-				// 这里对应着 for 循环的 len(equeue) == 0 条件
-				// 防止消费者 goroutine 发生了错误已经停止了
-				// 但是生产者 goroutine 还在读取反序列化索引
-				// 导致不能立即执行 defer wg.Done() 做无意义的工作
-				// 目的是为尽快恢复阻塞的 wg.Wait() 执行主 goroutine 返回
+				// This corresponds to the condition len(queue) == 0 in the for loop.
+				// It prevents a situation where the consumer goroutine has encountered an error and stopped,
+				// but the producer goroutine is still reading and deserializing the index.
+				// As a result, it avoids delaying the execution of defer wg.Done(), which would perform meaningless work.
+				// The goal is to resume the blocked wg.Wait() as quickly as possible,
+				// allowing the main goroutine to return promptly.
 				equeue <- errors.New("no corresponding index shard")
 				return
 			}
 		}
 	}()
 
-	// 等待所有 goroutine 完成
 	wg.Wait()
 
-	// 判断错误通道是否有值，捕获错误
 	select {
 	case err := <-equeue:
 		close(equeue)
@@ -536,12 +516,13 @@ func recoveryIndex(fd *os.File, indexs []*indexMap) error {
 	}
 }
 
-// crashRecoveryAllIndex 会对 regions 文件集合进行解析恢复内存索引，步骤如下：
-// 1. 崩溃恢复逻辑，扫描所有的数据文件
-// 2. 读取每条数据记录的前 26 字节 MetaInfo
-// 3. 对这些记录进行重放，并且查看 DEL 值是否为 1
-// 4. 如果是 1 则对内存的索引进行删除
-// 5. 否则直接将磁盘元数据重构建为索引
+// crashRecoveryAllIndex parses the regions file collection and restores the in-memory index with the following.
+// Steps:
+// 1. Crash recovery logic scans all data files.
+// 2. Reads the first 26 bytes of MetaInfo from each data record.
+// 3. Replays these records and checks whether the DEL value is 1.
+// 4. If DEL is 1, the corresponding entry is deleted from the in-memory index.
+// 5. Otherwise, the disk metadata is reconstructed into the index.
 // | DEL 1 | KIND 1 | EAT 8 | CAT 8 | KLEN 4 | VLEN 4 | KEY ? | VALUE ? | CRC32 4 |
 func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) error {
 	var regionIds []uint64
@@ -549,12 +530,10 @@ func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) erro
 		regionIds = append(regionIds, v)
 	}
 
-	// 对 regionIds 切片从小到大排序
 	sort.Slice(regionIds, func(i, j int) bool {
 		return regionIds[i] < regionIds[j]
 	})
 
-	// 3. 遍历每个数据文件（region）
 	for _, regionId := range regionIds {
 		fd, ok := regions[uint64(regionId)]
 		if !ok {
@@ -576,27 +555,21 @@ func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) erro
 
 			imap := indexs[inum%uint64(indexShard)]
 			if imap != nil {
-				// 如果是一条删除操作的记录，就将该记录对应索引删除
 				if segment.IsTombstone() {
 					delete(imap.index, inum)
 					continue
 				}
 
-				// 计算一整块记录的大小，+4 CRC 校验码占用 4 个字节
-				size := 26 + segment.KeySize + segment.ValueSize + 4
-
-				// 否则继续往下执行，构建重新 inode 索引
 				imap.index[inum] = &INode{
 					RegionID:  regionId,
 					Position:  offset,
-					Length:    size,
+					Length:    segment.Size(),
 					CreatedAt: segment.CreatedAt,
 					ExpiredAt: segment.ExpiredAt,
 				}
 
-				offset += uint64(size)
+				offset += uint64(segment.Size())
 			} else {
-				// 找不到索引就抛出异常
 				return errors.New("no corresponding index shard")
 			}
 		}
@@ -645,7 +618,7 @@ func checkFileSystem(path string) error {
 					if err != nil {
 						return fmt.Errorf("failed to check data file: %w", err)
 					}
-					defer utils.CloseFile(file)
+					defer file.Close()
 
 					err = validateFileHeader(file)
 					if err != nil {
@@ -659,7 +632,7 @@ func checkFileSystem(path string) error {
 				if err != nil {
 					return fmt.Errorf("failed to check index file: %w", err)
 				}
-				defer utils.CloseFile(file)
+				defer file.Close()
 
 				err = validateFileHeader(file)
 				if err != nil {
@@ -684,33 +657,33 @@ func readSegment(fd *os.File, offset uint64, bufsize int64) (uint64, *Segment, e
 	var seg Segment
 	readOffset := 0
 
-	// 解析 Tombstone (1 字节)
+	// Parse Tombstone (1 byte)
 	seg.Tombstone = int8(buf[readOffset])
 	readOffset++
 
-	// 解析 Type (1 字节)
+	// Parse Type (1 byte)
 	seg.Type = Kind(buf[readOffset])
 	readOffset++
 
-	// 解析 ExpiredAt (8 字节)
+	// Parse ExpiredAt (8 bytes)
 	seg.ExpiredAt = binary.LittleEndian.Uint64(buf[readOffset : readOffset+8])
 	readOffset += 8
 
-	// 解析 CreatedAt (8 字节)
+	// Parse CreatedAt (8 bytes)
 	seg.CreatedAt = binary.LittleEndian.Uint64(buf[readOffset : readOffset+8])
 	readOffset += 8
 
-	// 解析 KeySize (4 字节)
+	// Parse KeySize (4 bytes)
 	seg.KeySize = binary.LittleEndian.Uint32(buf[readOffset : readOffset+4])
 	readOffset += 4
 
-	// 解析 ValueSize (4 字节)
+	// Parse ValueSize (4 bytes)
 	seg.ValueSize = binary.LittleEndian.Uint32(buf[readOffset : readOffset+4])
 	readOffset += 4
 
-	// 26 到此结束
+	// End of Header 26 bytes
 
-	// 读取 Key 数据
+	// Read Key data
 	keybuf := make([]byte, seg.KeySize)
 	_, err = fd.ReadAt(keybuf, int64(offset)+int64(readOffset))
 	if err != nil {
@@ -718,7 +691,7 @@ func readSegment(fd *os.File, offset uint64, bufsize int64) (uint64, *Segment, e
 	}
 	readOffset += int(seg.KeySize)
 
-	// 读取 Value 数据
+	// Read Value data
 	valuebuf := make([]byte, seg.ValueSize)
 	_, err = fd.ReadAt(valuebuf, int64(offset)+int64(readOffset))
 	if err != nil {
@@ -726,14 +699,14 @@ func readSegment(fd *os.File, offset uint64, bufsize int64) (uint64, *Segment, e
 	}
 	readOffset += int(seg.ValueSize)
 
-	// 读取 checksum (4 字节)
+	// Read checksum (4 bytes)
 	checksumBuf := make([]byte, 4)
 	_, err = fd.ReadAt(checksumBuf, int64(offset)+int64(readOffset))
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read checksum in segment: %w", err)
 	}
 
-	// 校验 checksum
+	// Verify checksum
 	checksum := binary.LittleEndian.Uint32(checksumBuf)
 
 	buf = append(buf, keybuf...)
@@ -743,7 +716,7 @@ func readSegment(fd *os.File, offset uint64, bufsize int64) (uint64, *Segment, e
 		return 0, nil, fmt.Errorf("failed to crc32 checksum mismatch: %d", checksum)
 	}
 
-	// 更新 Segment 数据字段为读取的 valuebuf 并且通过 Transformer 处理之后才能使用
+	// Update Segment data fields with the read valuebuf and process it through Transformer before use
 	decodedData, err := transformer.Decode(valuebuf)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to transformer decode value in segment: %w", err)
@@ -756,23 +729,23 @@ func readSegment(fd *os.File, offset uint64, bufsize int64) (uint64, *Segment, e
 }
 
 func generateFileName(regionID uint64) (string, error) {
-	fileName := fmt.Sprintf("%08d%s", regionID, fileExtension)
-	// 验证 regionID 是否以 0 开头（仅对 8 位数有效）
+	fileName := formatDataFileName(regionID)
+	// Verify if regionID starts with 0 (valid only for 8 digits)
 	if strings.HasPrefix(fileName, "0") {
 		return fileName, nil
 	}
-	// 超出目前的设置数据文件个数范围就抛出异常
+	// Throw an exception if the regionID exceeds the current set number of data files
 	return "", fmt.Errorf("new region id %d cannot be converted to a valid file name", regionID)
 }
 
-// parseDataFileName 将文件名（如 0000001.wdb）中的数字部分转换为 uint64
+// parseDataFileName converts the numeric part of the file name (e.g., 0000001.wdb) to uint64
 func parseDataFileName(fileName string) (uint64, error) {
 	parts := strings.Split(fileName, ".")
 	if len(parts) != 2 {
 		return 0, fmt.Errorf("invalid file name format: %s", fileName)
 	}
 
-	// 转换为 uint16
+	// Convert to uint64
 	number, err := strconv.ParseUint(parts[0], 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse number from file name: %w", err)
@@ -781,18 +754,18 @@ func parseDataFileName(fileName string) (uint64, error) {
 	return uint64(number), nil
 }
 
-// formatDataFileName 将 uint16 转换为文件名格式（如 1 转为 0000001.wdb）
+// formatDataFileName converts uint64 to file name format (e.g., 1 to 0000001.wdb)
 func formatDataFileName(number uint64) string {
 	return fmt.Sprintf("%08d%s", number, fileExtension)
 }
 
-// serializedIndex 将索引进行序列化为可以恢复的文件快照记录格式：
+// serializedIndex serializes the index to a recoverable file snapshot record format:
 // | INUM 8 | RID 8  | POS 8 | LEN 4 | EAT 8 | CAT 8 | CRC32 4 |
 func serializedIndex(inum uint64, inode *INode) ([]byte, error) {
-	// 创建一个字节缓冲区
+	// Create a byte buffer
 	buf := new(bytes.Buffer)
 
-	// 按顺序写入各个字段
+	// Write each field in order
 	binary.Write(buf, binary.LittleEndian, inum)
 	binary.Write(buf, binary.LittleEndian, inode.RegionID)
 	binary.Write(buf, binary.LittleEndian, inode.Position)
@@ -800,28 +773,27 @@ func serializedIndex(inum uint64, inode *INode) ([]byte, error) {
 	binary.Write(buf, binary.LittleEndian, inode.ExpiredAt)
 	binary.Write(buf, binary.LittleEndian, inode.CreatedAt)
 
-	// 计算 CRC32 校验码
+	// Calculate CRC32 checksum
 	checksum := crc32.ChecksumIEEE(buf.Bytes())
 
-	// 将 CRC32 校验码写入字节缓冲区（4 字节）
+	// Write CRC32 checksum to byte buffer (4 bytes)
 	binary.Write(buf, binary.LittleEndian, checksum)
 
-	// 返回包含 CRC32 校验码的字节切片
+	// Return byte slice containing CRC32 checksum
 	return buf.Bytes(), nil
 }
 
-// deserializedIndex 将索引文件快照恢复为内存结构体：
+// deserializedIndex restores the index file snapshot to an in-memory struct:
 // | INUM 8 | RID 8  | OFS 8 | LEN 4 | EAT 8 | CAT 8 | CRC32 4 |
 func deserializedIndex(data []byte) (uint64, *INode, error) {
 	buf := bytes.NewReader(data)
-	// 反序列化 inum
 	var inum uint64
 	err := binary.Read(buf, binary.LittleEndian, &inum)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	// 反序列化 INode 的各个字段
+	// Deserialize each field of INode
 	var inode INode
 	err = binary.Read(buf, binary.LittleEndian, &inode.RegionID)
 	if err != nil {
@@ -848,14 +820,14 @@ func deserializedIndex(data []byte) (uint64, *INode, error) {
 		return 0, nil, err
 	}
 
-	// 反序列化 CRC32 校验码并验证
+	// Deserialize and verify CRC32 checksum
 	var checksum uint32
 	err = binary.Read(buf, binary.LittleEndian, &checksum)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	// 计算数据的 CRC32 校验码，如果校验码不一致，返回错误
+	// Calculate CRC32 checksum of data, return an error if checksum does not match
 	if checksum != crc32.ChecksumIEEE(data[:len(data)-4]) {
 		return 0, nil, fmt.Errorf("failed to crc32 checksum mismatch: %d", checksum)
 	}
@@ -864,10 +836,8 @@ func deserializedIndex(data []byte) (uint64, *INode, error) {
 }
 
 func serializedSegment(seg *Segment) ([]byte, error) {
-	// 创建一个字节缓冲区
 	buf := new(bytes.Buffer)
 
-	// 序列化 Segment 字段
 	err := binary.Write(buf, binary.LittleEndian, seg.Tombstone)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write Tombstone: %w", err)
@@ -898,7 +868,6 @@ func serializedSegment(seg *Segment) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write ValueSize: %w", err)
 	}
 
-	// 序列化 Key 和 Value 数据
 	err = binary.Write(buf, binary.LittleEndian, seg.Key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write Key: %w", err)
@@ -909,30 +878,137 @@ func serializedSegment(seg *Segment) ([]byte, error) {
 		return nil, fmt.Errorf("failed to write Value: %w", err)
 	}
 
-	// 计算 CRC32 校验码
 	checksum := crc32.ChecksumIEEE(buf.Bytes())
 
-	// 将 CRC32 校验码写入字节缓冲区（4 字节）
 	err = binary.Write(buf, binary.LittleEndian, checksum)
 	if err != nil {
 		return nil, fmt.Errorf("failed to write checksum: %w", err)
 	}
 
-	// 返回包含 CRC32 校验码的字节切片
 	return buf.Bytes(), nil
 }
 
-func compressorDirtyRegion(dirtyRegion []uint64, indexs []*indexMap, fd *os.File) error {
-	// 1. 对数据文件进行压缩
-	// 2. 通过 region ID 找到数据文件
-	// 3. 从文件头部开始扫描文件的记录
-	// 4. 使用记录的时间戳和内存索引时间戳比较
-	// 5. 如果一致就迁移文件到新文件中
-	// 6. 最后删除旧数据文件
+// Garbage Collection Compressor
+// Steps:
+// 1. If no index snapshot exists on disk, perform a global scan to restore the index.
+// 2. After the index is restored, run for a while before triggering garbage collection.
+// 3. Start the GC process by scanning disk data files and comparing them with the latest in-memory index.
+// 4. If a record in the disk file matches the index record, migrate it to a new file.
+// 5. If no match is found, the file is considered outdated; skip it and continue the process.
+// 6. Repeat the process until the GC has scanned all data files, then delete the original files.
+// 7. Note: The key point is reverse scanning. Use keys from the disk data files to locate and compare records in memory.
+// 8. If the in-memory index is used to locate records, it becomes impossible to determine if a file has been fully scanned.
+// 9. This is because records in the in-memory index may be distributed across multiple data files on disk.
+func (lfs *LogStructuredFS) compressDirtyRegion() error {
+	if len(lfs.regions) >= 5 {
+		var regionIds []uint64
+		for v := range lfs.regions {
+			regionIds = append(regionIds, v)
+		}
+		sort.Slice(regionIds, func(i, j int) bool {
+			return regionIds[i] < regionIds[j]
+		})
+
+		// find 40% dirty region
+		for i := 0; i < 4 && i < len(regionIds); i++ {
+			lfs.dirtyRegion = append(lfs.dirtyRegion, lfs.regions[regionIds[i]])
+		}
+
+		for _, fd := range lfs.dirtyRegion {
+			finfo, err := fd.Stat()
+			if err != nil {
+				return err
+			}
+
+			readOffset := uint64(len(dataFileMetadata))
+
+			for readOffset < uint64(finfo.Size()) {
+				inum, segment, err := readSegment(fd, uint64(readOffset), 26)
+				if err != nil {
+					return err
+				}
+
+				imap := lfs.indexs[inum%uint64(indexShard)]
+				if imap != nil {
+					imap.mu.RLock()
+					inode, ok := imap.index[inum]
+					imap.mu.RUnlock()
+
+					if !ok {
+						return fmt.Errorf("index not found for inum = %d: %w", inum, err)
+					}
+
+					if segment.CreatedAt == inode.CreatedAt && !segment.IsTombstone() {
+						err := appendDataWithLock(&lfs.mu, lfs.active, segment)
+						if err != nil {
+							return err
+						}
+
+						lfs.mu.Lock()
+						delete(lfs.regions, inode.RegionID)
+						lfs.mu.Unlock()
+
+						imap.mu.Lock()
+						inode.Position = lfs.offset
+						inode.RegionID = lfs.regionID
+						imap.mu.Unlock()
+
+						lfs.mu.Lock()
+						lfs.offset += uint64(segment.Size())
+						lfs.mu.Unlock()
+
+						readOffset += uint64(segment.Size())
+					} else {
+						// next segment
+						continue
+					}
+
+				} else {
+					return fmt.Errorf("imap is nil for inum = %d", inum)
+				}
+
+				if lfs.offset >= uint64(regionThreshold) {
+					err := lfs.changeRegions()
+					if err != nil {
+						return fmt.Errorf("failed to close active migrate region: %w", err)
+					}
+				}
+
+				// Delete dirty region file
+				err = os.Remove(filepath.Join(lfs.directory, fd.Name()))
+				if err != nil {
+					return fmt.Errorf("failed to remove dirty region: %w", err)
+				}
+			}
+
+		}
+		// Cleanup dirty region
+		lfs.dirtyRegion = nil
+	} else {
+		clog.Warnf("dirty region (%d%%) does not meet garbage collection status", len(lfs.regions)/10)
+	}
+
 	return nil
 }
 
-// 开始序列化小端数据，ToLittleEndian(lfs.active,seg)，需要对 seg 进行压缩处理再写入
-func appendBinaryToFile(_ *os.File, _ *Segment) error {
+// Start serializing little-endian data, needs to compress seg before writing.
+func appendDataWithLock(mux *sync.RWMutex, fd *os.File, seg *Segment) error {
+	bytes, err := serializedSegment(seg)
+	if err != nil {
+		return err
+	}
+
+	mux.Lock()
+	defer mux.Unlock()
+
+	// Write the byte stream to the file
+	n, err := fd.Write(bytes)
+	if err != nil {
+		return fmt.Errorf("failed to append binary data to active region: %w", err)
+	}
+	// Check if the number of written bytes matches
+	if n != len(bytes) {
+		return fmt.Errorf("partial write error: expected %d bytes, but wrote %d bytes", len(bytes), n)
+	}
 	return nil
 }

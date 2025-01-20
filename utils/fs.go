@@ -25,8 +25,8 @@ func IsDir(path string) bool {
 	return s.IsDir()
 }
 
-// CloseFile 封装了文件的 Sync 和 Close 操作，减少重复代码
-func CloseFile(file *os.File) error {
+// FlushToDisk 封装了文件的 Sync 和 Close 操作，减少重复代码
+func FlushToDisk(file *os.File) error {
 	if err := file.Sync(); err != nil {
 		return fmt.Errorf("failed to sync file: %w", err)
 	}

@@ -30,7 +30,7 @@ import (
 	"github.com/auula/wiredkv/server"
 	"github.com/auula/wiredkv/utils"
 	"github.com/auula/wiredkv/vfs"
-	"github.com/fatih/color"
+	"github.com/gookit/color"
 )
 
 const (
@@ -40,16 +40,15 @@ const (
 
 var (
 	//go:embed banner.txt
-	logo      string
-	greenFont = color.New(color.FgHiRed)
-	banner    = greenFont.Sprintf(logo, version, website)
-	daemon    = false
+	logo   string
+	banner = fmt.Sprintf(logo, version, website)
+	daemon = false
 )
 
 // 初始化全局需要使用的组件
 // 解析命令行输入的参数，默认命令行参数优先级最高，但是相对于能设置参数比较少
 func init() {
-	fmt.Println(banner)
+	color.RGB(255, 123, 34).Println(banner)
 	fl := parseFlags()
 
 	if conf.HasCustom(fl.config) {
@@ -68,9 +67,10 @@ func init() {
 	if fl.auth != conf.Default.Password {
 		conf.Settings.Password = fl.auth
 	} else {
-		// 如果命令行没有传入密码，系统随机生成一串 20 位的密码
-		conf.Settings.Password = utils.RandomString(20)
-		clog.Infof("The default password is: %s", conf.Settings.Password)
+		// 如果命令行没有传入密码，系统随机生成一串 26 位的密码
+		conf.Settings.Password = utils.RandomString(26)
+		auth := color.Yellow.Sprintf("%s", conf.Settings.Password)
+		clog.Warnf("The default password is: %s", auth)
 	}
 
 	if fl.path != conf.Default.Path {
@@ -90,11 +90,7 @@ func init() {
 		clog.Failed(err)
 	}
 
-	err = clog.SetOutput(conf.Settings.LogPath)
-	if err != nil {
-		clog.Failed(err)
-	}
-
+	clog.SetOutput(conf.Settings.LogPath)
 	clog.Info("Logging output initialized successfully")
 }
 
@@ -168,13 +164,19 @@ func runServer() {
 	time.Sleep(500 * time.Millisecond)
 	clog.Infof("HTTP server started at http://%s:%d 🚀", hts.IPv4(), hts.Port())
 
-	// Keep the daemon process alive
-	signalChan := make(chan os.Signal, 1)
-	// 监听指定的信号
-	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
-	// 阻塞，直到接收到信号
-	<-signalChan
-	clog.Info("process exit")
+	// keep the daemon process alive
+	blocking := make(chan os.Signal, 1)
+	signal.Notify(blocking, syscall.SIGINT, syscall.SIGTERM)
+
+	// blocking dameon process
+	<-blocking
+
+	// graceful exit from the program process
+	err = hts.Shutdown()
+	if err != nil {
+		clog.Failed(err)
+	}
+	os.Exit(0)
 }
 
 type flags struct {
