@@ -16,7 +16,7 @@ const version = "wiredkv/0.1.1"
 var (
 	root         *mux.Router
 	authPassword string
-	allowIPList  []string
+	allowIpList  []string
 	allowMethod  = []string{"GET", "POST", "DELETE", "PUT"}
 )
 
@@ -89,7 +89,7 @@ func authMiddleware(next http.Handler) http.Handler {
 		ip := r.Header.Get("X-Forwarded-For")
 		if ip == "" {
 			ip = r.RemoteAddr
-			for _, allowd := range allowIPList {
+			for _, allowd := range allowIpList {
 				if allowd != ip {
 					unauthorizedResponse(w, fmt.Sprintf("your ip %s address not allow!", ip))
 					return

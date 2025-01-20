@@ -168,7 +168,7 @@ func runServer() {
 	time.Sleep(500 * time.Millisecond)
 	clog.Infof("HTTP server started at http://%s:%d 🚀", hts.IPv4(), hts.Port())
 
-	// Keep the main process alive
+	// Keep the daemon process alive
 	signalChan := make(chan os.Signal, 1)
 	// 监听指定的信号
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)

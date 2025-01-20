@@ -91,7 +91,7 @@ func (hs *HttpServer) SetupFS(fss *vfs.LogStructuredFS) {
 }
 
 func (hs *HttpServer) SetAllowIP(allowd []string) {
-	allowIPList = allowd
+	allowIpList = allowd
 }
 
 func (hs *HttpServer) Port() int {

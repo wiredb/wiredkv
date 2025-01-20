@@ -79,7 +79,7 @@ type LogStructuredFS struct {
 	regions     map[uint64]*os.File
 	gcstate     GC_STATUS
 	gcdone      chan struct{}
-	dirtyRegion []*os.File
+	dirtyRegion []uint64
 }
 
 // AddSegment 会向 LogStructuredFS 虚拟文件系统插入一条 Segment 记录
@@ -308,7 +308,19 @@ func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
 				}
 
 				// 执行 gc 垃圾回收逻辑
-				lfs.dirtyRegion = nil
+				if len(lfs.regions) >= 3 {
+					for v := range lfs.regions {
+						lfs.dirtyRegion = append(lfs.dirtyRegion, v)
+					}
+					// 对 regionIds 切片从小到大排序
+					sort.Slice(lfs.dirtyRegion, func(i, j int) bool {
+						return lfs.dirtyRegion[i] < lfs.dirtyRegion[j]
+					})
+					// 执行对旧数据文件的压缩
+					compressorDirtyRegion(lfs.dirtyRegion[:1], lfs.indexs, lfs.active)
+				} else {
+
+				}
 
 				// 修改 gc 停止运行状态
 				lfs.gcstate = GC_STOP
@@ -908,6 +920,16 @@ func serializedSegment(seg *Segment) ([]byte, error) {
 
 	// 返回包含 CRC32 校验码的字节切片
 	return buf.Bytes(), nil
+}
+
+func compressorDirtyRegion(dirtyRegion []uint64, indexs []*indexMap, fd *os.File) error {
+	// 1. 对数据文件进行压缩
+	// 2. 通过 region ID 找到数据文件
+	// 3. 从文件头部开始扫描文件的记录
+	// 4. 使用记录的时间戳和内存索引时间戳比较
+	// 5. 如果一致就迁移文件到新文件中
+	// 6. 最后删除旧数据文件
+	return nil
 }
 
 // 开始序列化小端数据，ToLittleEndian(lfs.active,seg)，需要对 seg 进行压缩处理再写入
