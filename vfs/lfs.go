@@ -70,16 +70,16 @@ type indexMap struct {
 
 // LogStructuredFS represents the virtual file storage system.
 type LogStructuredFS struct {
-	mu         sync.Mutex
-	offset     uint64
-	regionID   uint64
-	directory  string
-	indexs     []*indexMap
-	active     *os.File
-	regions    map[uint64]*os.File
-	gcstate    GC_STATUS
-	gcdone     chan struct{}
-	dirtyPoint uint64
+	mu          sync.Mutex
+	offset      uint64
+	regionID    uint64
+	directory   string
+	indexs      []*indexMap
+	active      *os.File
+	regions     map[uint64]*os.File
+	gcstate     GC_STATUS
+	gcdone      chan struct{}
+	dirtyRegion []*os.File
 }
 
 // AddSegment 会向 LogStructuredFS 虚拟文件系统插入一条 Segment 记录
@@ -308,7 +308,7 @@ func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
 				}
 
 				// 执行 gc 垃圾回收逻辑
-				lfs.dirtyPoint = 0
+				lfs.dirtyRegion = nil
 
 				// 修改 gc 停止运行状态
 				lfs.gcstate = GC_STOP

@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/auula/wiredkv/clog"
@@ -167,7 +169,12 @@ func runServer() {
 	clog.Infof("HTTP server started at http://%s:%d 🚀", hts.IPv4(), hts.Port())
 
 	// Keep the main process alive
-	select {}
+	signalChan := make(chan os.Signal, 1)
+	// 监听指定的信号
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+	// 阻塞，直到接收到信号
+	<-signalChan
+	clog.Info("process exit")
 }
 
 type flags struct {
