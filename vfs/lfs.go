@@ -173,7 +173,7 @@ func (lfs *LogStructuredFS) createActiveRegion() error {
 }
 
 func (lfs *LogStructuredFS) recoverRegions() error {
-	// 恢复单线程不需要加锁
+	// Single-thread recovery does not require locking
 	files, err := os.ReadDir(lfs.directory)
 	if err != nil {
 		return fmt.Errorf("failed to read directory: %w", err)
@@ -189,28 +189,28 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 
 				regionID, err := parseDataFileName(file.Name())
 				if err != nil {
-					return fmt.Errorf("failed to get regions id: %w", err)
+					return fmt.Errorf("failed to get region id: %w", err)
 				}
 				lfs.regions[regionID] = regions
 			}
 		}
 	}
 
-	// 只有数据文件大于 1 时才找到最大的那个文件
+	// Only find the largest file if there are more than one data files
 	if len(lfs.regions) >= 1 {
 		var regionIds []uint64
 		for v := range lfs.regions {
 			regionIds = append(regionIds, v)
 		}
-		// 对 regionIds 切片从小到大排序
+		// Sort the regionIds slice in ascending order
 		sort.Slice(regionIds, func(i, j int) bool {
 			return regionIds[i] < regionIds[j]
 		})
 
-		// 找到最新数据文件的版本
+		// Find the latest version of the data file
 		lfs.regionID = regionIds[len(regionIds)-1]
 
-		// 如果最大那个 region 文件没有达到阀值就不用创建新文件，如果大于就创建新的文件
+		// Create a new file if the largest region file exceeds the threshold, otherwise, no need to create a new file
 		active, ok := lfs.regions[lfs.regionID]
 		if !ok {
 			return fmt.Errorf("region file not found for region id: %d", lfs.regionID)
@@ -231,7 +231,7 @@ func (lfs *LogStructuredFS) recoverRegions() error {
 			lfs.offset = uint64(offset)
 		}
 	} else {
-		// 如果是空文件夹就创建的一个可写的数据文件
+		// If it is an empty directory, create a writable data file
 		return lfs.createActiveRegion()
 	}
 
