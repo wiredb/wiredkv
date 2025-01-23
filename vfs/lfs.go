@@ -938,7 +938,7 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 						return fmt.Errorf("index not found for inum = %d: %w", inum, err)
 					}
 
-					if segment.CreatedAt == inode.CreatedAt && !segment.IsTombstone() {
+					if isValid(segment, inode) {
 						err := appendDataWithLock(&lfs.mu, lfs.active, segment)
 						if err != nil {
 							return err
@@ -989,6 +989,10 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 	}
 
 	return nil
+}
+
+func isValid(seg *Segment, inode *INode) bool {
+	return !seg.IsTombstone() && seg.CreatedAt == inode.CreatedAt && uint64(time.Now().Unix()) < seg.ExpiredAt
 }
 
 // Start serializing little-endian data, needs to compress seg before writing.
