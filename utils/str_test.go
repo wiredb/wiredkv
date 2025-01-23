@@ -71,7 +71,7 @@ func TestRandomString(t *testing.T) {
 		t.Logf("Random String: %s", randomStr)
 	}
 
-	randomStr = RandomString(length)
+	randomStr = RandomString(length + 1)
 
 	// 检查随机字符串的长度是否正确
 	if utf8.RuneCountInString(randomStr) != length {
