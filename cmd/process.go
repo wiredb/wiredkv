@@ -45,8 +45,10 @@ var (
 	daemon = false
 )
 
-// 初始化全局需要使用的组件
-// 解析命令行输入的参数，默认命令行参数优先级最高，但是相对于能设置参数比较少
+// Initialize components needed globally,
+// Parse command line input arguments,
+// command line parameters have the highest priority,
+// but they can set relatively fewer parameters.
 func init() {
 	color.RGB(255, 123, 34).Println(banner)
 	fl := parseFlags()
@@ -56,18 +58,19 @@ func init() {
 		if err != nil {
 			clog.Failed(err)
 		}
-		clog.Info("Loading custom config file was successfully")
+		clog.Info("Loading custom config file was successful")
 	}
 
 	if fl.debug {
 		conf.Settings.Debug, clog.IsDebug = fl.debug, fl.debug
 	}
 
-	// 命令行传入的密码优先级最高
+	// Command line password has the highest priority
 	if fl.auth != conf.Default.Password {
 		conf.Settings.Password = fl.auth
 	} else {
-		// 如果命令行没有传入密码，系统随机生成一串 26 位的密码
+		// If no password is passed from the command line,
+		// the system randomly generates a 26-character password
 		conf.Settings.Password = utils.RandomString(26)
 		auth := color.Yellow.Sprintf("%s", conf.Settings.Password)
 		clog.Warnf("The default password is: %s", auth)
@@ -84,7 +87,8 @@ func init() {
 	clog.Debug(conf.Settings)
 
 	var err error = nil
-	// 验证命令参入的参数，即使有默认配置，命令行参数不受约束
+	// Validate the input parameters, even if there is a default configuration,
+	// the command line parameters are not constrained
 	err = conf.Vaildated(conf.Settings)
 	if err != nil {
 		clog.Failed(err)
@@ -135,7 +139,7 @@ func runServer() {
 	}
 
 	if conf.Settings.IsCompressionEnabled() {
-		// 设置文件数据使用 Snappy 压缩算法
+		// Set file data to use Snappy compression algorithm
 		fss.SetCompressor(vfs.SnappyCompressor)
 		clog.Info("Snappy compression activated successfully")
 	}
@@ -160,18 +164,18 @@ func runServer() {
 		}
 	}()
 
-	// 延迟输出正常消息，因为上面的 Startup 方法在正常情况下是一个阻塞方法
+	// Delay output of normal messages
 	time.Sleep(500 * time.Millisecond)
 	clog.Infof("HTTP server started at http://%s:%d 🚀", hts.IPv4(), hts.Port())
 
-	// keep the daemon process alive
+	// Keep the daemon process alive
 	blocking := make(chan os.Signal, 1)
 	signal.Notify(blocking, syscall.SIGINT, syscall.SIGTERM)
 
-	// blocking dameon process
+	// Blocking daemon process
 	<-blocking
 
-	// graceful exit from the program process
+	// Graceful exit from the program process
 	err = hts.Shutdown()
 	if err != nil {
 		clog.Failed(err)
