@@ -36,6 +36,7 @@ const (
 	GC_INIT GC_STATUS = iota // gc 第一次执行就是这个状态
 	GC_STOP
 	GC_RUNNING
+	SEGMENT_PADDING = 26
 )
 
 var (
@@ -82,8 +83,8 @@ type LogStructuredFS struct {
 	dirtyRegion []*os.File
 }
 
-// AddSegment inserts a Segment record into the LogStructuredFS virtual file system.
-func (lfs *LogStructuredFS) AddSegment(inum uint64, seg Segment) error {
+// PutSegment inserts a Segment record into the LogStructuredFS virtual file system.
+func (lfs *LogStructuredFS) PutSegment(inum uint64, seg Segment) error {
 	// Append data to the active region with a lock.
 	err := appendDataWithLock(&lfs.mu, lfs.active, &seg)
 	if err != nil {
@@ -108,16 +109,40 @@ func (lfs *LogStructuredFS) AddSegment(inum uint64, seg Segment) error {
 
 	// Select an index shard based on the hash function and update it.
 	// To avoid locking the entire index, only the relevant shard is locked.
-	shard := lfs.indexs[inum%uint64(indexShard)]
-	shard.mu.Lock()
-	shard.index[inum] = inode
-	shard.mu.Unlock()
+	imap := lfs.indexs[inum%uint64(indexShard)]
+	imap.mu.Lock()
+	imap.index[inum] = inode
+	imap.mu.Unlock()
 
 	return nil
 }
 
-func (lfs *LogStructuredFS) BatchINodes(inodes ...*INode) {
+func (lfs *LogStructuredFS) BatchFetchSegments(inodes ...*INode) ([]*Segment, error) {
+	return nil, nil
+}
 
+func (lfs *LogStructuredFS) FetchSegment(inum uint64) (*Segment, error) {
+	imap := lfs.indexs[inum%uint64(indexShard)]
+	if imap != nil {
+		inode, ok := imap.index[inum]
+		if !ok {
+			return nil, fmt.Errorf("inode index information not found")
+		}
+		if inode.ExpiredAt <= uint64(time.Now().Unix()) {
+			delete(imap.index, inum)
+			return nil, fmt.Errorf("inode index information expired")
+		}
+		fd, ok := lfs.regions[inode.RegionID]
+		if !ok {
+			return nil, fmt.Errorf("failed to find data region")
+		}
+		_, segment, err := readSegment(fd, inode.Position, SEGMENT_PADDING)
+		if err != nil {
+			return nil, err
+		}
+		return segment, nil
+	}
+	return nil, nil
 }
 
 func InodeNum(key string) uint64 {
@@ -548,7 +573,7 @@ func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) erro
 		offset := uint64(len(dataFileMetadata))
 
 		for offset < uint64(finfo.Size()) {
-			inum, segment, err := readSegment(fd, offset, 26)
+			inum, segment, err := readSegment(fd, offset, SEGMENT_PADDING)
 			if err != nil {
 				return fmt.Errorf("failed to parse data file segment: %w", err)
 			}
@@ -923,7 +948,7 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 			readOffset := uint64(len(dataFileMetadata))
 
 			for readOffset < uint64(finfo.Size()) {
-				inum, segment, err := readSegment(fd, uint64(readOffset), 26)
+				inum, segment, err := readSegment(fd, uint64(readOffset), SEGMENT_PADDING)
 				if err != nil {
 					return err
 				}
