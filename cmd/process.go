@@ -35,7 +35,7 @@ import (
 
 const (
 	version = "v0.1.1"
-	website = "https://wiredkv.github.io"
+	website = "https://wiredb.github.io"
 )
 
 var (
@@ -58,7 +58,7 @@ func init() {
 		if err != nil {
 			clog.Failed(err)
 		}
-		clog.Info("Loading custom config file was successful")
+		clog.Info("Loading custom config file was successfully")
 	}
 
 	if fl.debug {

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	processName = "WIREDKV"
+	processName = "WIREDB"
 )
 
 var (

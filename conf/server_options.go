@@ -23,9 +23,9 @@ const (
 	DefaultConfigJSON = `
 	{
 		"port": 2468,
-		"path": "/tmp/wiredkv",
+		"path": "/tmp/wiredb",
 		"debug": false,
-		"logpath": "/tmp/wiredkv/out.log",
+		"logpath": "/tmp/wiredb/out.log",
 		"auth": "Are we wide open to the world?",
 		"region": {
 			"enable": true,

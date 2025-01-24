@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const version = "wiredkv/0.1.1"
+const version = "wiredb/0.1.1"
 
 var (
 	root         *mux.Router

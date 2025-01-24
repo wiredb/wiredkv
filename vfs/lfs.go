@@ -84,7 +84,8 @@ type LogStructuredFS struct {
 }
 
 // PutSegment inserts a Segment record into the LogStructuredFS virtual file system.
-func (lfs *LogStructuredFS) PutSegment(inum uint64, seg Segment) error {
+func (lfs *LogStructuredFS) PutSegment(key string, seg Segment) error {
+	inum := InodeNum(key)
 	// Append data to the active region with a lock.
 	err := appendDataWithLock(&lfs.mu, lfs.active, &seg)
 	if err != nil {
@@ -103,6 +104,15 @@ func (lfs *LogStructuredFS) PutSegment(inum uint64, seg Segment) error {
 	lfs.offset += uint64(seg.Size())
 	lfs.mu.Unlock()
 
+	if lfs.offset >= uint64(regionThreshold) {
+		lfs.mu.Lock()
+		err := lfs.createActiveRegion()
+		lfs.mu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
+
 	// Use a read lock to prevent conflicts during index updates.
 	lfs.mu.RLock()
 	defer lfs.mu.RUnlock()
@@ -117,32 +127,76 @@ func (lfs *LogStructuredFS) PutSegment(inum uint64, seg Segment) error {
 	return nil
 }
 
-func (lfs *LogStructuredFS) BatchFetchSegments(inodes ...*INode) ([]*Segment, error) {
-	return nil, nil
+func (lfs *LogStructuredFS) BatchFetchSegments(keys ...string) ([]*Segment, error) {
+	var inodes []uint64
+	for _, key := range keys {
+		inodes = append(inodes, InodeNum(key))
+	}
+	var segs []*Segment
+	for _, inode := range inodes {
+		seg, _ := lfs.FetchSegment(inode)
+		segs = append(segs, seg)
+	}
+	return segs, nil
+}
+
+func (lfs *LogStructuredFS) DeleteSegment(key string) error {
+	inum := InodeNum(key)
+	// Calculate the index shard
+	imap := lfs.indexs[inum%uint64(indexShard)]
+	if imap == nil {
+		return fmt.Errorf("inode index shard for %d not found", inum)
+	}
+
+	// Check if the inode is expired
+	imap.mu.Lock()
+	delete(imap.index, inum)
+	imap.mu.Unlock()
+
+	return appendDataWithLock(&lfs.mu, lfs.active, NewTombstoneSegment([]byte(key)))
 }
 
 func (lfs *LogStructuredFS) FetchSegment(inum uint64) (*Segment, error) {
+	// Calculate the index shard
 	imap := lfs.indexs[inum%uint64(indexShard)]
-	if imap != nil {
-		inode, ok := imap.index[inum]
-		if !ok {
-			return nil, fmt.Errorf("inode index information not found")
-		}
-		if inode.ExpiredAt <= uint64(time.Now().Unix()) {
-			delete(imap.index, inum)
-			return nil, fmt.Errorf("inode index information expired")
-		}
-		fd, ok := lfs.regions[inode.RegionID]
-		if !ok {
-			return nil, fmt.Errorf("failed to find data region")
-		}
-		_, segment, err := readSegment(fd, inode.Position, SEGMENT_PADDING)
-		if err != nil {
-			return nil, err
-		}
-		return segment, nil
+	if imap == nil {
+		return nil, fmt.Errorf("inode index shard for %d not found", inum)
 	}
-	return nil, nil
+
+	// Retrieve inode info
+	imap.mu.RLock()
+	inode, ok := imap.index[inum]
+	imap.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("inode index for %d not found", inum)
+	}
+
+	// Check if the inode is expired
+	if inode.ExpiredAt <= uint64(time.Now().Unix()) {
+		imap.mu.Lock()
+		delete(imap.index, inum)
+		imap.mu.Unlock()
+		return nil, fmt.Errorf("inode index for %d has expired", inum)
+	}
+
+	// Retrieve the corresponding data region
+	lfs.mu.RLock()
+	fd, ok := lfs.regions[inode.RegionID]
+	lfs.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("data region with ID %d not found", inode.RegionID)
+	}
+
+	// Read the segment from the data region
+	lfs.mu.RLock()
+	defer lfs.mu.RUnlock()
+	_, segment, err := readSegment(fd, inode.Position, SEGMENT_PADDING)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read segment: %w", err)
+	}
+
+	// Return the fetched segment
+	return segment, nil
 }
 
 func InodeNum(key string) uint64 {
@@ -1000,7 +1054,9 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 				}
 
 				// Delete dirty region file
+				lfs.mu.Lock()
 				err = os.Remove(filepath.Join(lfs.directory, fd.Name()))
+				lfs.mu.Unlock()
 				if err != nil {
 					return fmt.Errorf("failed to remove dirty region: %w", err)
 				}
