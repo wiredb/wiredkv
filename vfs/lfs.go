@@ -156,7 +156,8 @@ func (lfs *LogStructuredFS) DeleteSegment(key string) error {
 	return appendDataWithLock(&lfs.mu, lfs.active, NewTombstoneSegment([]byte(key)))
 }
 
-func (lfs *LogStructuredFS) FetchSegment(inum uint64) (*Segment, error) {
+func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
+	inum := InodeNum(key)
 	// Calculate the index shard
 	imap := lfs.indexs[inum%uint64(indexShard)]
 	if imap == nil {
