@@ -74,7 +74,7 @@ func TestSavedAsConfig(t *testing.T) {
 		Port:     8080,
 		Path:     tmpDir,
 		Debug:    true,
-		LogPath:  "/tmp/vasedb/out.log",
+		LogPath:  "/tmp/wiredb/out.log",
 		Password: "password@123",
 		Region: Region{
 			Enable:    true,
@@ -117,7 +117,7 @@ func TestSavedConfig(t *testing.T) {
 		Port:     8080,
 		Path:     tmpDir,
 		Debug:    true,
-		LogPath:  "/tmp/vasedb/out.log",
+		LogPath:  "/tmp/wiredb/out.log",
 		Password: "password@123",
 		Region: Region{
 			Enable:    true,
@@ -244,7 +244,7 @@ func TestServerOptions_ToString(t *testing.T) {
 		Port:     8080,
 		Path:     "",
 		Debug:    true,
-		LogPath:  "/tmp/vasedb/out.log",
+		LogPath:  "/tmp/wiredb/out.log",
 		Password: "password@123",
 		Region: Region{
 			Enable:    true,

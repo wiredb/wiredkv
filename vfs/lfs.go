@@ -128,13 +128,9 @@ func (lfs *LogStructuredFS) PutSegment(key string, seg Segment) error {
 }
 
 func (lfs *LogStructuredFS) BatchFetchSegments(keys ...string) ([]*Segment, error) {
-	var inodes []uint64
-	for _, key := range keys {
-		inodes = append(inodes, InodeNum(key))
-	}
 	var segs []*Segment
-	for _, inode := range inodes {
-		seg, _ := lfs.FetchSegment(inode)
+	for _, key := range keys {
+		seg, _ := lfs.FetchSegment(key)
 		segs = append(segs, seg)
 	}
 	return segs, nil

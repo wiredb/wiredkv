@@ -12,15 +12,15 @@ func TestSplitArgs(t *testing.T) {
 		expected []string
 	}{
 		{
-			input:    []string{"./vasedb", "--port=2468", "--host=localhost", "--flag", "value"},
+			input:    []string{"./cmd", "--port=2468", "--host=localhost", "--flag", "value"},
 			expected: []string{"--port", "2468", "--host", "localhost", "--flag", "value"},
 		},
 		{
-			input:    []string{"./vasedb", "--port==8080", "--port===8080", "--flag=value"},
+			input:    []string{"./cmd", "--port==8080", "--port===8080", "--flag=value"},
 			expected: []string{"--flag", "value"},
 		},
 		{
-			input:    []string{"./vasedb", "arg1", "arg2", "arg3"},
+			input:    []string{"./cmd", "arg1", "arg2", "arg3"},
 			expected: []string{"arg1", "arg2", "arg3"},
 		},
 	}

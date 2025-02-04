@@ -26,11 +26,13 @@ func IsDir(path string) bool {
 }
 
 // FlushToDisk 封装了文件的 Sync 和 Close 操作，减少重复代码
-func FlushToDisk(file *os.File) error {
-	if err := file.Sync(); err != nil {
+func FlushToDisk(fd *os.File) error {
+	err := fd.Sync()
+	if err != nil {
 		return fmt.Errorf("failed to sync file: %w", err)
 	}
-	if err := file.Close(); err != nil {
+	err = fd.Close()
+	if err != nil {
 		return fmt.Errorf("failed to close file: %w", err)
 	}
 	return nil

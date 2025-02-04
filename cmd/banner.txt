@@ -2,8 +2,8 @@
              __      _(_)_ __ ___  __| | |__  
              \ \ /\ / / | '__/ _ \/ _` | '_ \ 
               \ V  V /| | | |  __/ (_| | |_) |
-               \_/\_/ |_|_|  \___|\__,_|_.__/   %s
+               \_/\_/ |_|_|  \___|\__,_|_.__/  %s
                                                                        
-  WiredDB is a NoSQL database based on Log-structured file system.
-  Software License: Apache 2.0   Website: %s
+  WireDB is a NoSQL database based on Log-structured file system.
+  Software License: Apache 2.0  Website: %s
  

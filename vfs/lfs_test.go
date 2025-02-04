@@ -3,6 +3,8 @@ package vfs
 import (
 	"os"
 	"testing"
+
+	"github.com/auula/wiredkv/conf"
 )
 
 // TestSerializedIndex 测试 serializedIndex 函数
@@ -129,4 +131,23 @@ func TestReadSegment(t *testing.T) {
 	if inum != InodeNum(string(seg.Key)) {
 		t.Errorf("expected InodeNum to be '%s', but got: %d", seg.Key, inum)
 	}
+}
+
+func TestVFSWrite(t *testing.T) {
+	fss, err := OpenFS(&Options{
+		FsPerm:    conf.FsPerm,
+		Path:      conf.Settings.Path,
+		Threshold: conf.Settings.Region.Threshold,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seg, err := fss.FetchSegment("key-01")
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("%v", seg)
 }

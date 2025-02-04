@@ -37,7 +37,7 @@ func SplitArgs(args []string) []string {
 			if strings.Count(args[i], "=") > 1 {
 				continue
 			}
-			newArgs = append(newArgs, strings.Split(args[i], "=")...)
+			newArgs = append(newArgs, args[i])
 		}
 	}
 
