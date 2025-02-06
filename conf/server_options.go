@@ -22,7 +22,7 @@ const (
 	// DefaultConfigJSON configure json string
 	DefaultConfigJSON = `
 	{
-		"port": 2468,
+		"port": 2668,
 		"path": "/tmp/wiredb",
 		"debug": false,
 		"logpath": "/tmp/wiredb/out.log",

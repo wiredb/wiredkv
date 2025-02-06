@@ -1,7 +1,11 @@
 package types
 
-type Text struct{}
+import "gopkg.in/mgo.v2/bson"
 
-func (text *Text) ToBSON() []byte {
-	return nil
+type Text struct {
+	Content string
+}
+
+func (text Text) ToBSON() ([]byte, error) {
+	return bson.Marshal(text)
 }

@@ -123,18 +123,22 @@ func (hs *HttpServer) Shutdown() error {
 	err := hs.serv.Shutdown(context.Background())
 	if err != nil && err != http.ErrServerClosed {
 		// 这里发生了错误，外层处理这个错误时也要关闭文件存储系统
+		innerErr := closeStorage()
+		if innerErr != nil {
+			return fmt.Errorf("failed to shutdown http server: %w", innerErr)
+		}
 		return err
 	}
+	return closeStorage()
+}
 
-	// 再关闭文件存储系统
+func closeStorage() error {
 	if storage != nil {
 		err := storage.CloseFS()
 		if err != nil {
 			return fmt.Errorf("failed to shutdown the storage engine: %w", err)
 		}
+		return storage.ExportSnapshotIndex()
 	}
-
-	storage.ExportSnapshotIndex()
-
 	return nil
 }

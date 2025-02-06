@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// wired kv process logic code
+// wiredb code logic of the main process
 package cmd
 
 import (

@@ -1,0 +1,20 @@
+{
+    "table": {
+        "is_valid": false,
+        "items": [
+            {
+                "id": 1,
+                "name": "Item 1"
+            },
+            {
+                "id": 2,
+                "name": "Item 2"
+            }
+        ],
+        "meta": {
+            "version": "2.0",
+            "author": "John Doe"
+        }
+    },
+    "TTL": 120
+}

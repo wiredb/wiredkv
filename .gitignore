@@ -21,6 +21,8 @@ testdata
 ./main.go.text
 system_design.md
 wiredb
+wiredbd
+wiredbd.exe
 
 # Dependency directories (remove the comment below to include it)
 # vendor/

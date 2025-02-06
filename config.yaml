@@ -1,4 +1,4 @@
-port: 2468                              # 服务 HTTP 协议端口
+port: 2668                              # 服务 HTTP 协议端口
 mode: "std"                             # 默认为 std 标准库，另外可以设置 mmap 模式（本功能待完善）
 path: "/tmp/wiredb"                     # 数据库文件存储目录
 auth: "Are we wide open to the world?"  # 访问 HTTP 协议的秘密

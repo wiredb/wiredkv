@@ -84,10 +84,10 @@ type LogStructuredFS struct {
 }
 
 // PutSegment inserts a Segment record into the LogStructuredFS virtual file system.
-func (lfs *LogStructuredFS) PutSegment(key string, seg Segment) error {
+func (lfs *LogStructuredFS) PutSegment(key string, seg *Segment) error {
 	inum := InodeNum(key)
 	// Append data to the active region with a lock.
-	err := appendDataWithLock(&lfs.mu, lfs.active, &seg)
+	err := appendDataWithLock(&lfs.mu, lfs.active, seg)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,10 @@ func (lfs *LogStructuredFS) PutSegment(key string, seg Segment) error {
 func (lfs *LogStructuredFS) BatchFetchSegments(keys ...string) ([]*Segment, error) {
 	var segs []*Segment
 	for _, key := range keys {
-		seg, _ := lfs.FetchSegment(key)
+		seg, err := lfs.FetchSegment(key)
+		if err != nil {
+			return nil, err
+		}
 		segs = append(segs, seg)
 	}
 	return segs, nil
@@ -149,7 +152,17 @@ func (lfs *LogStructuredFS) DeleteSegment(key string) error {
 	delete(imap.index, inum)
 	imap.mu.Unlock()
 
-	return appendDataWithLock(&lfs.mu, lfs.active, NewTombstoneSegment([]byte(key)))
+	seg := NewTombstoneSegment([]byte(key))
+	err := appendDataWithLock(&lfs.mu, lfs.active, seg)
+	if err != nil {
+		return err
+	}
+
+	lfs.mu.Lock()
+	lfs.offset += uint64(seg.Size())
+	lfs.mu.Unlock()
+
+	return nil
 }
 
 func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
@@ -169,7 +182,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
 	}
 
 	// Check if the inode is expired
-	if inode.ExpiredAt <= uint64(time.Now().Unix()) {
+	if inode.ExpiredAt <= uint64(time.Now().Unix()) && inode.ExpiredAt != 0 {
 		imap.mu.Lock()
 		delete(imap.index, inum)
 		imap.mu.Unlock()
@@ -194,6 +207,16 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
 
 	// Return the fetched segment
 	return segment, nil
+}
+
+func (lfs *LogStructuredFS) KeysCount() int {
+	keys := 0
+	for _, imap := range lfs.indexs {
+		imap.mu.RLock()
+		keys += len(imap.index)
+		imap.mu.RUnlock()
+	}
+	return keys
 }
 
 func InodeNum(key string) uint64 {
@@ -244,6 +267,7 @@ func (lfs *LogStructuredFS) createActiveRegion() error {
 
 	lfs.active = active
 	lfs.offset = uint64(len(dataFileMetadata))
+	lfs.regions[lfs.regionID] = lfs.active
 
 	return nil
 }
@@ -633,6 +657,12 @@ func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) erro
 			if imap != nil {
 				if segment.IsTombstone() {
 					delete(imap.index, inum)
+					offset += uint64(segment.Size())
+					continue
+				}
+
+				if segment.ExpiredAt <= uint64(time.Now().Unix()) && segment.ExpiredAt != 0 {
+					offset += uint64(segment.Size())
 					continue
 				}
 
@@ -1011,7 +1041,7 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 					imap.mu.RUnlock()
 
 					if !ok {
-						return fmt.Errorf("index not found for inum = %d: %w", inum, err)
+						continue
 					}
 
 					if isValid(segment, inode) {

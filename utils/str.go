@@ -37,6 +37,7 @@ func SplitArgs(args []string) []string {
 			if strings.Count(args[i], "=") > 1 {
 				continue
 			}
+			// ./cmd agrs1 agrs2 --debug --daemon
 			newArgs = append(newArgs, args[i])
 		}
 	}

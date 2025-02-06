@@ -222,13 +222,13 @@ func TestServerOptions_Marshal(t *testing.T) {
 func TestDefaultConfigInitialization(t *testing.T) {
 
 	// 检查 DefaultConfig 是否被正确初始化
-	if Default.Port != 2468 {
-		t.Errorf("Expected DefaultConfig.Port to be 2468, but got %d", Default.Port)
+	if Default.Port != 2668 {
+		t.Errorf("Expected DefaultConfig.Port to be 2668, but got %d", Default.Port)
 	}
 
 	// 检查 Settings 是否被正确初始化
-	if Settings.Port != 2468 {
-		t.Errorf("Expected Settings.Port to be 2468, but got %d", Settings.Port)
+	if Settings.Port != 2668 {
+		t.Errorf("Expected Settings.Port to be 2668, but got %d", Settings.Port)
 	}
 
 }
