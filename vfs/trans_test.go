@@ -31,3 +31,29 @@ func TestTransformerWithComplexData(t *testing.T) {
 		t.Fatalf("failed to decode data: got %s, want %s", decodedData, originalString)
 	}
 }
+
+func TestCryptor(t *testing.T) {
+	aes := new(Cryptor)
+
+	// Example plaintext
+	plaintext := []byte("Hello, this is a test of AES encryption!")
+
+	// Key (must be either 16, 24, or 32 bytes long for AES-128, AES-192, or AES-256)
+	secret := []byte("1234567890123456")
+
+	// encrypt plaintext
+	encrypted, err := aes.Encrypt(secret, plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// decrypt ciphertext
+	decrypted, err := aes.Decrypt(secret, encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(decrypted) != string(plaintext) {
+		t.Fatalf("got: %s , need: %s", decrypted, plaintext)
+	}
+}

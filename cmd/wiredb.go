@@ -144,6 +144,12 @@ func runServer() {
 		clog.Info("Snappy compression activated successfully")
 	}
 
+	if conf.Settings.IsEncryptionEnabled() {
+		// Set file data to use AES cryptor algorithm
+		fss.SetEncryptor(vfs.AESCryptor, conf.Settings.Secret())
+		clog.Info("Static encryptor activated successfully")
+	}
+
 	if conf.Settings.IsRegionGCEnabled() {
 		fss.StartRegionGC(conf.Settings.RegionGCInterval())
 		clog.Info("Region compression activated successfully")

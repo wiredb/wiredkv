@@ -49,6 +49,12 @@ var (
 	Settings *ServerOptions = new(ServerOptions)
 	// Default is the default configuration
 	Default *ServerOptions = new(ServerOptions)
+	// Define the valid AES key lengths in bytes (128-bit, 192-bit, and 256-bit)
+	valid = map[int]bool{
+		16: true,
+		24: true,
+		32: true,
+	}
 )
 
 func init() {
@@ -85,6 +91,22 @@ func (AuthValidator) Validate(opt *ServerOptions) error {
 	return validatePassword(opt.Path)
 }
 
+type EncryptorValidator struct{}
+
+func (EncryptorValidator) Validate(opt *ServerOptions) error {
+	return validateEncryptor(opt.Encryptor)
+}
+
+func validateEncryptor(encryptor Encryptor) error {
+	if !encryptor.Enable {
+		return nil
+	}
+	if valid[len(encryptor.Secret)] {
+		return nil
+	}
+	return errors.New("invalid key length it must be 16, 24, or 32 bytes")
+}
+
 func validatePort(port int) error {
 	if port <= 1024 || port >= 65535 {
 		return errors.New("port range must be between 1025 and 65534")
@@ -111,6 +133,7 @@ func Vaildated(opt *ServerOptions) error {
 		PortValidator{},
 		PathValidator{},
 		AuthValidator{},
+		EncryptorValidator{},
 	}
 
 	for _, validator := range validators {
@@ -181,6 +204,10 @@ func (opt *ServerOptions) IsRegionGCEnabled() bool {
 
 func (opt *ServerOptions) RegionGCInterval() time.Duration {
 	return time.Duration(opt.Region.Second) * time.Second
+}
+
+func (opt *ServerOptions) Secret() []byte {
+	return []byte(opt.Encryptor.Secret)
 }
 
 func toString(opt *ServerOptions) string {

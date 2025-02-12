@@ -1,13 +1,20 @@
 package vfs
 
 import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"errors"
 	"fmt"
 
 	"github.com/golang/snappy"
 )
 
-var SnappyCompressor = new(Snappy)
+var (
+	AESCryptor       = new(Cryptor)
+	SnappyCompressor = new(Snappy)
+)
 
 const (
 	// 使用整数位标志存储状态
@@ -23,8 +30,8 @@ type Compressor interface {
 }
 
 type Encryptor interface {
-	Encode(secret, data []byte) ([]byte, error)
-	Decode(secret, data []byte) ([]byte, error)
+	Encrypt(secret, plianttext []byte) ([]byte, error)
+	Decrypt(secret, ciphertext []byte) ([]byte, error)
 }
 
 type Transformer struct {
@@ -98,7 +105,7 @@ func (t *Transformer) Encode(data []byte) ([]byte, error) {
 
 	// 加密数据
 	if t.IsEncryptionEnabled() && t.Encryptor != nil {
-		data, err = t.Encryptor.Encode(t.secret, data)
+		data, err = t.Encryptor.Encrypt(t.secret, data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt data: %w", err)
 		}
@@ -112,7 +119,7 @@ func (t *Transformer) Decode(data []byte) ([]byte, error) {
 	var err error
 	// 解密数据
 	if t.IsEncryptionEnabled() && t.Encryptor != nil {
-		data, err = t.Encryptor.Decode(t.secret, data)
+		data, err = t.Encryptor.Decrypt(t.secret, data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt data: %w", err)
 		}
@@ -140,4 +147,54 @@ func (s *Snappy) Compress(data []byte) ([]byte, error) {
 func (s *Snappy) Decompress(data []byte) ([]byte, error) {
 	// Snappy 解压数据
 	return snappy.Decode(nil, data)
+}
+
+type Cryptor struct{}
+
+func (c *Cryptor) Encrypt(secret, plaintext []byte) ([]byte, error) {
+	// Create AES cipher block
+	block, err := aes.NewCipher(secret)
+	if err != nil {
+		return nil, err
+	}
+
+	// Padding to block size (AES block size is 16 bytes)
+	padding := block.BlockSize() - len(plaintext)%block.BlockSize()
+	padText := bytes.Repeat([]byte{byte(padding)}, padding)
+	plaintext = append(plaintext, padText...)
+
+	// Create IV
+	iv := make([]byte, block.BlockSize())
+	if _, err := rand.Read(iv); err != nil {
+		return nil, err
+	}
+
+	// Create cipher using CBC mode
+	ciphertext := make([]byte, len(plaintext))
+	mode := cipher.NewCBCEncrypter(block, iv)
+	mode.CryptBlocks(ciphertext, plaintext)
+
+	// Return IV + ciphertext
+	return append(iv, ciphertext...), nil
+}
+
+func (c *Cryptor) Decrypt(secret, ciphertext []byte) ([]byte, error) {
+	// Create AES cipher block
+	block, err := aes.NewCipher(secret)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract IV from the beginning of ciphertext
+	iv := ciphertext[:block.BlockSize()]
+	ciphertext = ciphertext[block.BlockSize():]
+
+	// Create cipher using CBC mode
+	mode := cipher.NewCBCDecrypter(block, iv)
+	plaintext := make([]byte, len(ciphertext))
+	mode.CryptBlocks(plaintext, ciphertext)
+
+	// Remove padding
+	padding := int(plaintext[len(plaintext)-1])
+	return plaintext[:len(plaintext)-padding], nil
 }
