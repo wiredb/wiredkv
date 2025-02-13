@@ -1,10 +1,12 @@
 package vfs
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 
 	"github.com/auula/wiredkv/conf"
+	"github.com/auula/wiredkv/types"
 )
 
 // TestSerializedIndex 测试 serializedIndex 函数
@@ -135,7 +137,7 @@ func TestReadSegment(t *testing.T) {
 
 func TestVFSWrite(t *testing.T) {
 	fss, err := OpenFS(&Options{
-		FsPerm:    conf.FsPerm,
+		FSPerm:    conf.FSPerm,
 		Path:      conf.Settings.Path,
 		Threshold: conf.Settings.Region.Threshold,
 	})
@@ -143,8 +145,45 @@ func TestVFSWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seg, err := fss.FetchSegment("key-01")
+	data := `
+{
+  "table": {
+    "is_valid": false,
+    "items": [
+      {
+        "id": 1,
+        "name": "Item 1"
+      },
+      {
+        "id": 2,
+        "name": "Item 2"
+      }
+    ],
+    "meta": {
+      "version": "2.0",
+      "author": "Leon Ding"
+    }
+  }
+}
+`
 
+	var tables types.Tables
+	err = json.Unmarshal([]byte(data), &tables)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seg, err := NewSegment("key-01", tables, tables.TTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = fss.PutSegment("key-01", seg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seg, err = fss.FetchSegment("key-01")
 	if err != nil {
 		t.Fatal(err)
 	}

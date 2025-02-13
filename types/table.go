@@ -17,7 +17,7 @@ import "gopkg.in/mgo.v2/bson"
 //            "author": "John Doe"
 //          }
 //        },
-//        "TTL": 10,
+//        "ttl": 10,
 //      }'
 
 // {"code":200,"message":"request processed successfully!"}

@@ -109,7 +109,7 @@ func TestSavedConfig(t *testing.T) {
 	// 创建一个临时目录用于测试
 	tmpDir := t.TempDir()
 
-	os.Mkdir(filepath.Join(tmpDir, "etc"), FsPerm)
+	os.Mkdir(filepath.Join(tmpDir, "etc"), FSPerm)
 
 	// 创建一个 ServerOptions 实例
 	config := &ServerOptions{
@@ -240,7 +240,6 @@ func TestServerOptions_ToString(t *testing.T) {
 	}
 
 	vdb := ServerOptions{
-
 		Port:     8080,
 		Path:     "",
 		Debug:    true,

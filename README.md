@@ -1,12 +1,7 @@
-
-
-<img align="right" src="https://img.ibyte.me/0sd9vd.png" alt="wiredb" width="120" height="120" />
-
 # WireDB
 
 WireDB is a NoSQL that supports multiple data types based on Log-structured file system.
 
----
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/auula/wiredb)](https://goreportcard.com/report/github.com/auula/wiredb)
 [![Go Reference](https://pkg.go.dev/badge/github.com/auula/wiredb.svg)](https://pkg.go.dev/github.com/auula/wiredb)
@@ -24,13 +19,12 @@ WireDB is a NoSQL that supports multiple data types based on Log-structured file
 
 ### 特 性
 
-- 支持 JSON Patch
-- 支持多事务处理
-- 支持磁盘存储和垃圾回收
-- 支持自定义索引和自定义 WASM 函数
-- 支持 Direct/IO 进行数据同步
-- 支持 JavaScript 存储和运算，采用 goja 执行引擎，通过此种方式可以实现 Faas 功能
-- 
+- 支持多种内置的数据结构
+- 支持磁盘数据存储和垃圾回收
+- 支持 HTTP 协议的数据操作协议
+- 支持磁盘数据静态加密和数据压缩
+- 支持服务数据访问 IP 白名单功能
+- 高吞吐量、低延迟批量数据写入效率
 
 ---
 

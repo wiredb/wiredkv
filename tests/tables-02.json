@@ -13,8 +13,8 @@
         ],
         "meta": {
             "version": "2.0",
-            "author": "John Doe"
+            "author": "Leon Ding"
         }
     },
-    "TTL": 120
+    "ttl": 120
 }

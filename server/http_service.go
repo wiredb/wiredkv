@@ -28,7 +28,7 @@ var (
 
 func init() {
 	root = mux.NewRouter()
-	root.HandleFunc("/", statusController)
+	root.HandleFunc("/", healthController)
 	root.HandleFunc("/tables/{key}", tablesController)
 	root.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		okResponse(w, http.StatusNotFound, nil, "404 Not Found - Oops!")
@@ -46,41 +46,38 @@ type SystemInfo struct {
 	KeyCount    int    `json:"key_count"`
 	Version     string `json:"version"`
 	GCStatus    int8   `json:"gc_status"`
+	DiskFree    string `json:"disk_free"`
+	DiskUsed    string `json:"disk_used"`
+	DiskTotal   string `json:"disk_total"`
 	MemoryFree  string `json:"memory_free"`
 	MemoryTotal string `json:"memory_total"`
+	DiskPercent string `json:"disk_percent"`
 }
 
-func statusController(w http.ResponseWriter, r *http.Request) {
+func healthController(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		okResponse(w, http.StatusMethodNotAllowed, nil, "HTTP Protocol Method Not Allowed!")
 		return
 	}
 
-	info := SystemInfo{
-		Version:  version,
-		KeyCount: storage.KeysCount(),
-		GCStatus: storage.RegionGCStatus(),
-	}
-
-	freemem, err := utils.GetFreeMemory()
-	if err == nil {
-		info.MemoryFree = fmt.Sprintf("%.2fGB", float64(freemem)/1024/1024/1024)
-	} else {
+	health, err := newHealth(storage.GetDirectory())
+	if err != nil {
 		okResponse(w, http.StatusInternalServerError, nil, err.Error())
-		clog.Errorf("HTTP server status controller: %s", err)
+		clog.Errorf("HTTP server health controller GET: %s", err)
 		return
 	}
 
-	totalmem, err := utils.GetTotalMemory()
-	if err == nil {
-		info.MemoryTotal = fmt.Sprintf("%.2fGB", float64(totalmem)/1024/1024/1024)
-	} else {
-		okResponse(w, http.StatusInternalServerError, nil, err.Error())
-		clog.Errorf("HTTP server status controller: %s", err)
-		return
-	}
-
-	okResponse(w, http.StatusOK, info, "")
+	okResponse(w, http.StatusOK, SystemInfo{
+		Version:     version,
+		KeyCount:    storage.KeysCount(),
+		GCStatus:    storage.RegionGCStatus(),
+		DiskFree:    fmt.Sprintf("%.2fGB", utils.BytesToGB(health.GetFreeDisk())),
+		DiskUsed:    fmt.Sprintf("%.2fGB", utils.BytesToGB(health.GetUsedDisk())),
+		DiskTotal:   fmt.Sprintf("%.2fGB", utils.BytesToGB(health.GetTotalDisk())),
+		MemoryFree:  fmt.Sprintf("%.2fGB", utils.BytesToGB(health.GetFreeMemory())),
+		MemoryTotal: fmt.Sprintf("%.2fGB", utils.BytesToGB(health.GetTotalMemory())),
+		DiskPercent: fmt.Sprintf("%.2f%%", health.GetDiskPercent()),
+	}, "")
 }
 
 func tablesController(w http.ResponseWriter, r *http.Request) {
@@ -95,13 +92,13 @@ func tablesController(w http.ResponseWriter, r *http.Request) {
 		seg, err := storage.FetchSegment(key)
 		if err != nil {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
-			clog.Errorf("HTTP server tables controller: %s", err)
+			clog.Errorf("HTTP server tables controller GET: %s", err)
 			return
 		}
 		table, err := seg.ToTables()
 		if err != nil {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
-			clog.Errorf("HTTP server tables controller: %s", err)
+			clog.Errorf("HTTP server tables controller GET: %s", err)
 			return
 		}
 		okResponse(w, http.StatusOK, table, "")
@@ -110,19 +107,19 @@ func tablesController(w http.ResponseWriter, r *http.Request) {
 		err := json.NewDecoder(r.Body).Decode(&tables)
 		if err != nil {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
-			clog.Errorf("HTTP server tables controller: %s", err)
+			clog.Errorf("HTTP server tables controller PUT: %s", err)
 			return
 		}
 		seg, err := vfs.NewSegment(key, tables, tables.TTL)
 		if err != nil {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
-			clog.Errorf("HTTP server tables controller: %s", err)
+			clog.Errorf("HTTP server tables controller PUT: %s", err)
 			return
 		}
 		err = storage.PutSegment(key, seg)
 		if err != nil {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
-			clog.Errorf("HTTP server tables controller: %s", err)
+			clog.Errorf("HTTP server tables controller PUT: %s", err)
 			return
 		}
 		okResponse(w, http.StatusOK, nil, "request processed successfully!")
@@ -132,7 +129,7 @@ func tablesController(w http.ResponseWriter, r *http.Request) {
 		err := storage.DeleteSegment(key)
 		if err != nil {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
-			clog.Errorf("HTTP server tables controller: %s", err)
+			clog.Errorf("HTTP server tables controller DEL: %s", err)
 			return
 		}
 		okResponse(w, http.StatusOK, nil, "delete data successfully!")
@@ -173,19 +170,20 @@ func authMiddleware(next http.Handler) http.Handler {
 		}
 
 		// 检查 IP 白名单
-		isAllowedIP := false
 		if len(allowIpList) > 0 {
+			ok := false
 			for _, allowedIP := range allowIpList {
-				if strings.Split(ip, ":")[0] == allowedIP {
-					isAllowedIP = true
+				// 只要找到匹配的 IP，就终止循环
+				if allowedIP == strings.Split(ip, ":")[0] {
+					ok = true
 					break
 				}
 			}
-		}
-		if !isAllowedIP {
-			clog.Warnf("Unauthorized IP address: %s", ip)
-			okResponse(w, http.StatusUnauthorized, nil, fmt.Sprintf("Your IP %s is not allowed!", ip))
-			return
+			if !ok {
+				clog.Warnf("Unauthorized IP address: %s", ip)
+				okResponse(w, http.StatusUnauthorized, nil, fmt.Sprintf("Your IP %s is not allowed!", ip))
+				return
+			}
 		}
 
 		if token != authPassword {

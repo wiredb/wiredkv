@@ -26,22 +26,23 @@ const (
 )
 
 func init() {
-	// 初始化的本地 IPv4 地址
-	interfaces, err := net.Interfaces()
+	// Initialized local server ip address
+	addrs, err := net.Interfaces()
 	if err != nil {
-		clog.Errorf("get local IPv4 address failed: %s", err)
+		clog.Errorf("get server IPv4 address failed: %s", err)
 	}
 
-	for _, face := range interfaces {
+	for _, face := range addrs {
 		adders, err := face.Addrs()
 		if err != nil {
-			clog.Errorf("get local IPv4 address failed: %s", err)
+			clog.Errorf("get server IPv4 address failed: %s", err)
 		}
 
 		for _, addr := range adders {
 			if ipNet, ok := addr.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
 				if ipNet.IP.To4() != nil {
 					ipv4 = ipNet.IP.String()
+					return
 				}
 			}
 		}
@@ -56,8 +57,7 @@ type HttpServer struct {
 type Options struct {
 	Port int
 	Auth string
-	// 可以考虑 CertMagic 自动管理证书并启动 HTTPS 服务
-	// certs *tls.Config
+	// CertMagic *tls.Config
 }
 
 // New 创建一个新的 HTTP 服务器
@@ -73,7 +73,7 @@ func New(opt *Options) (*HttpServer, error) {
 	hs := HttpServer{
 		serv: &http.Server{
 			Handler:      root,
-			Addr:         net.JoinHostPort(ipv4, strconv.Itoa(opt.Port)),
+			Addr:         net.JoinHostPort("0.0.0.0", strconv.Itoa(opt.Port)),
 			WriteTimeout: timeout,
 			ReadTimeout:  timeout,
 		},

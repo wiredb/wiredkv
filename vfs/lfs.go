@@ -45,7 +45,7 @@ var (
 	fileExtension    = ".wdb"
 	indexFileName    = "index.wdb"
 	regionThreshold  = int64(1 * GB) // 1GB
-	dataFileMetadata = []byte{0xDB, 0x0, 0x0, 0x1}
+	dataFileMetadata = []byte{0x01, 0x01, 0x00, 0xDB}
 	transformer      = NewTransformer()
 )
 
@@ -152,7 +152,7 @@ func (lfs *LogStructuredFS) DeleteSegment(key string) error {
 	delete(imap.index, inum)
 	imap.mu.Unlock()
 
-	seg := NewTombstoneSegment([]byte(key))
+	seg := NewTombstoneSegment(key)
 	err := appendDataWithLock(&lfs.mu, lfs.active, seg)
 	if err != nil {
 		return err
@@ -460,7 +460,7 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 	for i := 0; i < indexShard; i++ {
 		instance.indexs[i] = &indexMap{
 			mu:    sync.RWMutex{},
-			index: make(map[uint64]*INode, 100000),
+			index: make(map[uint64]*INode, 1e6),
 		}
 	}
 
@@ -494,6 +494,10 @@ func (lfs *LogStructuredFS) CloseFS() error {
 	// If there is a snapshot of the index file, recover from the snapshot.
 	// Otherwise, perform a global scan.
 	return lfs.ExportSnapshotIndex()
+}
+
+func (lfs *LogStructuredFS) GetDirectory() string {
+	return lfs.directory
 }
 
 // ExportSnapshotIndex is the operation performed during a normal program exit.
@@ -1100,7 +1104,7 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 func isValid(seg *Segment, inode *INode) bool {
 	return !seg.IsTombstone() &&
 		seg.CreatedAt == inode.CreatedAt &&
-		(uint64(time.Now().Unix()) < seg.ExpiredAt && seg.ExpiredAt != 0)
+		(seg.ExpiredAt == 0 || uint64(time.Now().Unix()) < seg.ExpiredAt)
 }
 
 // Start serializing little-endian data, needs to compress seg before writing.

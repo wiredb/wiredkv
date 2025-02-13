@@ -75,7 +75,7 @@ func NewSegment(key string, data Serializable, ttl uint64) (*Segment, error) {
 
 }
 
-func NewTombstoneSegment(key []byte) *Segment {
+func NewTombstoneSegment(key string) *Segment {
 	timestamp, expiredAt := uint64(time.Now().Unix()), uint64(0)
 	return &Segment{
 		Type:      Unknown,

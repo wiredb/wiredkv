@@ -34,7 +34,7 @@ const (
 		},
 		"encryptor": {
 			"enable": false,
-			"secret": "your-static-data-secret"
+			"secret": "your-static-data-secret!"
 		},
 		"compressor": {
 			"enable": false
@@ -104,7 +104,7 @@ func validateEncryptor(encryptor Encryptor) error {
 	if valid[len(encryptor.Secret)] {
 		return nil
 	}
-	return errors.New("invalid key length it must be 16, 24, or 32 bytes")
+	return errors.New("invalid secret key length it must be 16, 24, or 32 bytes")
 }
 
 func validatePort(port int) error {

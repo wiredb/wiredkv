@@ -11,7 +11,7 @@ region:             # 数据区
     threshold: 3    # 默认个数据文件大小，单位 GB
 encryptor:          # 是否开启静态数据加密功能
     enable: false
-    secret: "1234567890123456"
+    secret: "your-static-data-secret!"
 compressor:         # 是否开启静态数据压缩功能
     enable: false
 allowip:            # 白名单 IP 列表

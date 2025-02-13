@@ -79,7 +79,7 @@ func (t *Transformer) DisableAll() {
 
 func (t *Transformer) SetEncryptor(encryptor Encryptor, secret []byte) error {
 	if len(secret) < 16 {
-		return errors.New("secret char length too short")
+		return errors.New("secret key char length too short")
 	}
 	t.secret = secret
 	t.Encryptor = encryptor
@@ -105,7 +105,7 @@ func (t *Transformer) Encode(data []byte) ([]byte, error) {
 
 	// 加密数据
 	if t.IsEncryptionEnabled() && t.Encryptor != nil {
-		data, err = t.Encryptor.Encrypt(t.secret, data)
+		data, err = t.Encrypt(t.secret, data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt data: %w", err)
 		}
@@ -119,7 +119,7 @@ func (t *Transformer) Decode(data []byte) ([]byte, error) {
 	var err error
 	// 解密数据
 	if t.IsEncryptionEnabled() && t.Encryptor != nil {
-		data, err = t.Encryptor.Decrypt(t.secret, data)
+		data, err = t.Decrypt(t.secret, data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt data: %w", err)
 		}
@@ -165,7 +165,8 @@ func (c *Cryptor) Encrypt(secret, plaintext []byte) ([]byte, error) {
 
 	// Create IV
 	iv := make([]byte, block.BlockSize())
-	if _, err := rand.Read(iv); err != nil {
+	_, err = rand.Read(iv)
+	if err != nil {
 		return nil, err
 	}
 
