@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"hash/fnv"
 	"io"
 	"io/fs"
 	"os"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/auula/wiredkv/clog"
 	"github.com/auula/wiredkv/utils"
+	"github.com/spaolacci/murmur3"
 )
 
 const RWCA = os.O_RDWR | os.O_CREATE | os.O_APPEND
@@ -51,7 +51,7 @@ var (
 
 type Options struct {
 	Path      string
-	FsPerm    os.FileMode
+	FSPerm    os.FileMode
 	Threshold uint8
 }
 
@@ -220,9 +220,7 @@ func (lfs *LogStructuredFS) KeysCount() int {
 }
 
 func InodeNum(key string) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(key))
-	return h.Sum64()
+	return murmur3.Sum64([]byte(key))
 }
 
 func (lfs *LogStructuredFS) changeRegions() error {
@@ -448,7 +446,7 @@ func OpenFS(opt *Options) (*LogStructuredFS, error) {
 		return nil, err
 	}
 
-	fsPerm = opt.FsPerm
+	fsPerm = opt.FSPerm
 	instance := &LogStructuredFS{
 		mu:        sync.RWMutex{},
 		indexs:    make([]*indexMap, indexShard),

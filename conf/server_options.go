@@ -17,8 +17,8 @@ const (
 	extension       = "yaml"
 	fileName        = "config"
 	defaultFilePath = ""
-	// 设置默认文件系统权限
-	FsPerm = fs.FileMode(0755)
+	// Default file system permission
+	FSPerm = fs.FileMode(0755)
 	// DefaultConfigJSON configure json string
 	DefaultConfigJSON = `
 	{
@@ -167,7 +167,7 @@ func Load(file string, opt *ServerOptions) error {
 
 func saved(path string, opt *ServerOptions) error {
 	yamlData, _ := yaml.Marshal(&opt)
-	return os.WriteFile(path, yamlData, FsPerm)
+	return os.WriteFile(path, yamlData, FSPerm)
 }
 
 func (opt *ServerOptions) SavedAs(path string) error {
