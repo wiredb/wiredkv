@@ -2,6 +2,7 @@ package vfs
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -189,4 +190,59 @@ func TestVFSWrite(t *testing.T) {
 	}
 
 	t.Logf("%v", seg)
+}
+
+func BenchmarkVFSWrite(b *testing.B) {
+	fss, err := OpenFS(&Options{
+		FSPerm:    conf.FSPerm,
+		Path:      conf.Settings.Path,
+		Threshold: conf.Settings.Region.Threshold,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	data := `
+{
+  "table": {
+    "is_valid": false,
+    "items": [
+      {
+        "id": 1,
+        "name": "Item 1"
+      },
+      {
+        "id": 2,
+        "name": "Item 2"
+      }
+    ],
+    "meta": {
+      "version": "2.0",
+      "author": "Leon Ding"
+    }
+  }
+}
+`
+	var tables types.Tables
+	err = json.Unmarshal([]byte(data), &tables)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// 重置计时器，忽略 setup 代码的影响
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		key := fmt.Sprintf("key-%d", i)
+
+		seg, err := NewSegment(key, tables, tables.TTL)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		err = fss.PutSegment(key, seg)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }
