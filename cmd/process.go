@@ -128,6 +128,7 @@ func runServer() {
 		clog.Failed(err)
 	}
 
+	clog.Info("Loading parsing data files ...")
 	fss, err := vfs.OpenFS(&vfs.Options{
 		FSPerm:    conf.FSPerm,
 		Path:      conf.Settings.Path,
