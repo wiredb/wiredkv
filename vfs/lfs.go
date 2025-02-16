@@ -30,17 +30,17 @@ const (
 	GB                    // 2^30 = 1073741824
 )
 
-type GC_STATUS = int8 // Region garbage collection status
+type GC_STATE = int8 // Region garbage collection state
 
 const (
-	GC_INIT GC_STATUS = iota // gc 第一次执行就是这个状态
-	GC_STOP
-	GC_RUNNING
+	GC_INIT GC_STATE = iota // gc 第一次执行就是这个状态
+	GC_ACTIVE
+	GC_INACTIVE
 	SEGMENT_PADDING = 26
 )
 
 var (
-	indexShard       = 5
+	indexShard       = 10
 	fsPerm           = fs.FileMode(0755)
 	fileExtension    = ".wdb"
 	indexFileName    = "index.wdb"
@@ -78,7 +78,7 @@ type LogStructuredFS struct {
 	indexs      []*indexMap
 	active      *os.File
 	regions     map[uint64]*os.File
-	gcstate     GC_STATUS
+	gcstate     GC_STATE
 	gcdone      chan struct{}
 	dirtyRegion []*os.File
 }
@@ -400,7 +400,7 @@ func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
 			select {
 			case <-ticker.C:
 				// Skip this cycle if the previous garbage collection is still running.
-				if lfs.gcstate == GC_RUNNING {
+				if lfs.gcstate == GC_ACTIVE {
 					continue
 				}
 
@@ -411,11 +411,11 @@ func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
 				}
 
 				// Update the state to indicate garbage collection has stopped.
-				lfs.gcstate = GC_STOP
+				lfs.gcstate = GC_INACTIVE
 			case <-lfs.gcdone:
 				// If garbage collection is running, delay its exit to prevent dirty data
 				// from being generated due to interrupted operations.
-				for lfs.gcstate == GC_RUNNING {
+				for lfs.gcstate == GC_ACTIVE {
 					time.Sleep(3 * time.Second)
 				}
 				// Reset the garbage collector state to the initial state.
@@ -427,13 +427,15 @@ func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
 }
 
 func (lfs *LogStructuredFS) StopRegionGC() {
-	if lfs.gcstate == GC_RUNNING || lfs.gcstate == GC_STOP {
+	if lfs.gcstate == GC_ACTIVE || lfs.gcstate == GC_INACTIVE {
 		lfs.gcdone <- struct{}{}
 		close(lfs.gcdone)
 	}
 }
 
-func (lfs *LogStructuredFS) RegionGCStatus() GC_STATUS {
+// GCState returns the current garbage collection (GC) state
+// of the LogStructuredFS regions compressor worker.
+func (lfs *LogStructuredFS) GCState() GC_STATE {
 	return lfs.gcstate
 }
 
@@ -864,7 +866,7 @@ func parseDataFileName(fileName string) (uint64, error) {
 
 // formatDataFileName converts uint64 to file name format (e.g., 1 to 0000001.wdb)
 func formatDataFileName(number uint64) string {
-	return fmt.Sprintf("%08d%s", number, fileExtension)
+	return fmt.Sprintf("%010d%s", number, fileExtension)
 }
 
 // serializedIndex serializes the index to a recoverable file snapshot record format:

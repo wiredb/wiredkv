@@ -45,12 +45,12 @@ type ResponseBody struct {
 type SystemInfo struct {
 	KeyCount    int    `json:"key_count"`
 	Version     string `json:"version"`
-	GCStatus    int8   `json:"gc_status"`
+	GCState     int8   `json:"gc_state"`
 	DiskFree    string `json:"disk_free"`
 	DiskUsed    string `json:"disk_used"`
 	DiskTotal   string `json:"disk_total"`
-	MemoryFree  string `json:"memory_free"`
-	MemoryTotal string `json:"memory_total"`
+	MemoryFree  string `json:"mem_free"`
+	MemoryTotal string `json:"mem_total"`
 	DiskPercent string `json:"disk_percent"`
 }
 
@@ -69,8 +69,8 @@ func healthController(w http.ResponseWriter, r *http.Request) {
 
 	okResponse(w, http.StatusOK, SystemInfo{
 		Version:     version,
+		GCState:     storage.GCState(),
 		KeyCount:    storage.KeysCount(),
-		GCStatus:    storage.RegionGCStatus(),
 		DiskFree:    fmt.Sprintf("%.2fGB", utils.BytesToGB(health.GetFreeDisk())),
 		DiskUsed:    fmt.Sprintf("%.2fGB", utils.BytesToGB(health.GetUsedDisk())),
 		DiskTotal:   fmt.Sprintf("%.2fGB", utils.BytesToGB(health.GetTotalDisk())),

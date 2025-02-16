@@ -5,12 +5,12 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
-type Health struct {
+type health struct {
 	mem  *mem.VirtualMemoryStat
 	disk *disk.UsageStat
 }
 
-func newHealth(path string) (*Health, error) {
+func newHealth(path string) (*health, error) {
 	mem, err := mem.VirtualMemory()
 	if err != nil {
 		return nil, err
@@ -19,31 +19,31 @@ func newHealth(path string) (*Health, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Health{mem: mem, disk: disk}, nil
+	return &health{mem: mem, disk: disk}, nil
 }
 
 // GetTotalMemory returns the total system memory in bytes.
-func (h *Health) GetTotalMemory() uint64 {
+func (h *health) GetTotalMemory() uint64 {
 	return h.mem.Total
 }
 
 // GetFreeMemory returns the available system memory in bytes.
-func (h *Health) GetFreeMemory() uint64 {
+func (h *health) GetFreeMemory() uint64 {
 	return h.mem.Available
 }
 
-func (h *Health) GetUsedDisk() uint64 {
+func (h *health) GetUsedDisk() uint64 {
 	return h.disk.Used
 }
 
-func (h *Health) GetFreeDisk() uint64 {
+func (h *health) GetFreeDisk() uint64 {
 	return h.disk.Free
 }
 
-func (h *Health) GetTotalDisk() uint64 {
+func (h *health) GetTotalDisk() uint64 {
 	return h.disk.Total
 }
 
-func (h *Health) GetDiskPercent() float64 {
+func (h *health) GetDiskPercent() float64 {
 	return h.disk.UsedPercent
 }
