@@ -103,7 +103,7 @@ func (s *Segment) ToSet() (*types.Set, error) {
 		return nil, fmt.Errorf("not support conversion to set type")
 	}
 	var set types.Set
-	err := bson.Unmarshal(s.Value, &set)
+	err := bson.Unmarshal(s.Value, &set.Set)
 	if err != nil {
 		return nil, err
 	}
@@ -151,23 +151,11 @@ func (s *Segment) ToTables() (*types.Tables, error) {
 		return nil, fmt.Errorf("not support conversion to tables type")
 	}
 	var tables types.Tables
-	err := bson.Unmarshal(s.Value, &tables)
+	err := bson.Unmarshal(s.Value, &tables.Table)
 	if err != nil {
 		return nil, err
 	}
 	return &tables, nil
-}
-
-func (s *Segment) ToBinary() (*types.Binary, error) {
-	if s.Type != Binary {
-		return nil, fmt.Errorf("not support conversion to binary type")
-	}
-	var bin types.Binary
-	err := bson.Unmarshal(s.Value, &bin)
-	if err != nil {
-		return nil, err
-	}
-	return &bin, nil
 }
 
 func (s *Segment) ToNumber() (*types.Number, error) {
@@ -193,18 +181,16 @@ func (s *Segment) TTL() int64 {
 // 将类型映射为 Kind 的辅助函数
 func toKind(data Serializable) (Kind, error) {
 	switch data.(type) {
-	case *types.Set:
+	case types.Set:
 		return Set, nil
 	case *types.ZSet:
 		return ZSet, nil
-	case *types.List:
+	case types.List:
 		return List, nil
 	case *types.Text:
 		return Text, nil
 	case types.Tables:
 		return Tables, nil
-	case *types.Binary:
-		return Binary, nil
 	case *types.Number:
 		return Number, nil
 	default:

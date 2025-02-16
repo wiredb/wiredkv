@@ -28,5 +28,5 @@ type Tables struct {
 }
 
 func (tab Tables) ToBSON() ([]byte, error) {
-	return bson.Marshal(tab)
+	return bson.Marshal(tab.Table)
 }
