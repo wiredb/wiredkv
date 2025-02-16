@@ -183,15 +183,15 @@ func toKind(data Serializable) (Kind, error) {
 	switch data.(type) {
 	case types.Set:
 		return Set, nil
-	case *types.ZSet:
+	case types.ZSet:
 		return ZSet, nil
 	case types.List:
 		return List, nil
-	case *types.Text:
+	case types.Text:
 		return Text, nil
 	case types.Tables:
 		return Tables, nil
-	case *types.Number:
+	case types.Number:
 		return Number, nil
 	default:
 		return Unknown, errors.New("unknown data type")
