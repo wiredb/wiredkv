@@ -133,7 +133,7 @@ func (lfs *LogStructuredFS) PutSegment(key string, seg *Segment) error {
 func (lfs *LogStructuredFS) BatchFetchSegments(keys ...string) ([]*Segment, error) {
 	var segs []*Segment
 	for _, key := range keys {
-		seg, err := lfs.FetchSegment(key)
+		_, seg, err := lfs.FetchSegment(key)
 		if err != nil {
 			return nil, err
 		}
@@ -226,16 +226,14 @@ func InodeNum(key string) uint64 {
 	return murmur3.Sum64([]byte(key))
 }
 
-// UpdateSegmentWithCAS 通过类似于 MVCC 来实现更新操作数据一致性，通过持久化 Seg 时间和 Inode 时间做比较实现
+// UpdateSegmentWithCAS 通过类似于 MVCC 来实现更新操作数据一致性
 func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, newseg *Segment) error {
 	inum := InodeNum(key)
-	// Calculate the index shard
 	imap := lfs.indexs[inum%uint64(indexShard)]
 	if imap == nil {
 		return fmt.Errorf("inode index shard for %d not found", inum)
 	}
 
-	// Retrieve inode info
 	imap.mu.RLock()
 	inode, ok := imap.index[inum]
 	imap.mu.RUnlock()
@@ -250,9 +248,15 @@ func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, ne
 			return fmt.Errorf("failed to update data: %w", err)
 		}
 
+		imap.mu.Lock()
+		imap.index[inum].Length = newseg.Size()
+		imap.index[inum].Position = lfs.offset
+		imap.index[inum].RegionID = lfs.regionID
+		imap.index[inum].CreatedAt = newseg.CreatedAt
+		imap.index[inum].ExpiredAt = newseg.ExpiredAt
+		imap.mu.Unlock()
+
 		lfs.mu.Lock()
-		inode.Length = newseg.Size()
-		inode.Position = lfs.offset
 		lfs.offset += uint64(newseg.Size())
 		lfs.mu.Unlock()
 
@@ -264,14 +268,6 @@ func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, ne
 				return err
 			}
 		}
-
-		lfs.mu.RLock()
-		defer lfs.mu.RUnlock()
-
-		imap := lfs.indexs[inum%uint64(indexShard)]
-		imap.mu.Lock()
-		imap.index[inum] = inode
-		imap.mu.Unlock()
 
 		return nil
 	}
