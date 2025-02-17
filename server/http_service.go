@@ -89,7 +89,7 @@ func tablesController(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		seg, err := storage.FetchSegment(key)
+		_, seg, err := storage.FetchSegment(key)
 		if err != nil {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
 			clog.Errorf("HTTP server tables controller GET: %s", err)

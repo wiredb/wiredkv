@@ -168,12 +168,12 @@ func (lfs *LogStructuredFS) DeleteSegment(key string) error {
 	return nil
 }
 
-func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
+func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 	inum := InodeNum(key)
 	// Calculate the index shard
 	imap := lfs.indexs[inum%uint64(indexShard)]
 	if imap == nil {
-		return nil, fmt.Errorf("inode index shard for %d not found", inum)
+		return 0, nil, fmt.Errorf("inode index shard for %d not found", inum)
 	}
 
 	// Retrieve inode info
@@ -181,7 +181,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
 	inode, ok := imap.index[inum]
 	imap.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("inode index for %d not found", inum)
+		return 0, nil, fmt.Errorf("inode index for %d not found", inum)
 	}
 
 	// Check if the inode is expired
@@ -189,7 +189,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
 		imap.mu.Lock()
 		delete(imap.index, inum)
 		imap.mu.Unlock()
-		return nil, fmt.Errorf("inode index for %d has expired", inum)
+		return 0, nil, fmt.Errorf("inode index for %d has expired", inum)
 	}
 
 	// Retrieve the corresponding data region
@@ -197,7 +197,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
 	fd, ok := lfs.regions[inode.RegionID]
 	lfs.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("data region with ID %d not found", inode.RegionID)
+		return 0, nil, fmt.Errorf("data region with ID %d not found", inode.RegionID)
 	}
 
 	// Read the segment from the data region
@@ -205,11 +205,11 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
 	defer lfs.mu.RUnlock()
 	_, segment, err := readSegment(fd, inode.Position, SEGMENT_PADDING)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read segment: %w", err)
+		return 0, nil, fmt.Errorf("failed to read segment: %w", err)
 	}
 
 	// Return the fetched segment
-	return segment, nil
+	return inode.MVCCVersion, segment, nil
 }
 
 func (lfs *LogStructuredFS) KeysCount() int {
@@ -243,7 +243,7 @@ func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, ne
 		return fmt.Errorf("inode index for %d not found", inum)
 	}
 
-	// MVCC: timestamp version is not modified by another thread
+	// MVCC: version is not modified by another thread
 	if atomic.CompareAndSwapUint64(&inode.MVCCVersion, expected, expected+1) {
 		err := appendDataWithLock(&lfs.mu, lfs.active, newseg)
 		if err != nil {
@@ -727,11 +727,12 @@ func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) erro
 				}
 
 				imap.index[inum] = &INode{
-					RegionID:  regionId,
-					Position:  offset,
-					Length:    segment.Size(),
-					CreatedAt: segment.CreatedAt,
-					ExpiredAt: segment.ExpiredAt,
+					RegionID:    regionId,
+					Position:    offset,
+					Length:      segment.Size(),
+					CreatedAt:   segment.CreatedAt,
+					ExpiredAt:   segment.ExpiredAt,
+					MVCCVersion: 0,
 				}
 
 				offset += uint64(segment.Size())
