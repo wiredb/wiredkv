@@ -96,6 +96,7 @@ func tablesController(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		table, err := seg.ToTables()
+		// storage.UpdateSegmentWithCAS(0, seg)
 		if err != nil {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
 			clog.Errorf("HTTP server tables controller GET: %s", err)

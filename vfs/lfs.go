@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/auula/wiredkv/clog"
@@ -182,7 +183,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (*Segment, error) {
 	}
 
 	// Check if the inode is expired
-	if inode.ExpiredAt <= uint64(time.Now().Unix()) && inode.ExpiredAt != 0 {
+	if inode.ExpiredAt <= uint64(time.Now().UnixNano()) && inode.ExpiredAt != 0 {
 		imap.mu.Lock()
 		delete(imap.index, inum)
 		imap.mu.Unlock()
@@ -221,6 +222,31 @@ func (lfs *LogStructuredFS) KeysCount() int {
 
 func InodeNum(key string) uint64 {
 	return murmur3.Sum64([]byte(key))
+}
+
+// UpdateSegmentWithCAS 通过类似于 MVCC 来实现更新操作数据一致性，通过持久化 Seg 时间和 Inode 时间做比较实现
+func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, newseg *Segment) error {
+	inum := InodeNum(key)
+	// Calculate the index shard
+	imap := lfs.indexs[inum%uint64(indexShard)]
+	if imap == nil {
+		return fmt.Errorf("inode index shard for %d not found", inum)
+	}
+
+	// Retrieve inode info
+	imap.mu.RLock()
+	inode, ok := imap.index[inum]
+	imap.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("inode index for %d not found", inum)
+	}
+
+	// MVCC: timestamp version is not modified by another thread
+	if atomic.CompareAndSwapUint64(&inode.CreatedAt, expected, newseg.CreatedAt) {
+		return lfs.PutSegment(key, newseg)
+	}
+
+	return errors.New("failed to update data due to version conflict")
 }
 
 func (lfs *LogStructuredFS) changeRegions() error {
@@ -665,7 +691,7 @@ func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) erro
 					continue
 				}
 
-				if segment.ExpiredAt <= uint64(time.Now().Unix()) && segment.ExpiredAt != 0 {
+				if segment.ExpiredAt <= uint64(time.Now().UnixNano()) && segment.ExpiredAt != 0 {
 					offset += uint64(segment.Size())
 					continue
 				}
@@ -1106,7 +1132,7 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 func isValid(seg *Segment, inode *INode) bool {
 	return !seg.IsTombstone() &&
 		seg.CreatedAt == inode.CreatedAt &&
-		(seg.ExpiredAt == 0 || uint64(time.Now().Unix()) < seg.ExpiredAt)
+		(seg.ExpiredAt == 0 || uint64(time.Now().UnixNano()) < seg.ExpiredAt)
 }
 
 // Start serializing little-endian data, needs to compress seg before writing.

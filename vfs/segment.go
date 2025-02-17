@@ -45,7 +45,7 @@ func NewSegment(key string, data Serializable, ttl uint64) (*Segment, error) {
 		return nil, fmt.Errorf("unsupported data type: %w", err)
 	}
 
-	timestamp, expiredAt := uint64(time.Now().Unix()), uint64(0)
+	timestamp, expiredAt := uint64(time.Now().UnixNano()), uint64(0)
 	if ttl > 0 {
 		expiredAt = uint64(time.Now().Add(time.Second * time.Duration(ttl)).Unix())
 	}
@@ -76,7 +76,7 @@ func NewSegment(key string, data Serializable, ttl uint64) (*Segment, error) {
 }
 
 func NewTombstoneSegment(key string) *Segment {
-	timestamp, expiredAt := uint64(time.Now().Unix()), uint64(0)
+	timestamp, expiredAt := uint64(time.Now().UnixNano()), uint64(0)
 	return &Segment{
 		Type:      Unknown,
 		Tombstone: 1,
@@ -171,7 +171,7 @@ func (s *Segment) ToNumber() (*types.Number, error) {
 }
 
 func (s *Segment) TTL() int64 {
-	now := uint64(time.Now().Unix())
+	now := uint64(time.Now().UnixNano())
 	if s.ExpiredAt > 0 && s.ExpiredAt > now {
 		return int64(s.ExpiredAt - now)
 	}
