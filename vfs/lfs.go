@@ -58,11 +58,12 @@ type Options struct {
 
 // INode represents a file system node with metadata.
 type INode struct {
-	RegionID  uint64 // Unique identifier for the region
-	Position  uint64 // Position within the file
-	Length    uint32 // Data record length
-	ExpiredAt uint64 // Expiration time of the INode (UNIX timestamp in seconds)
-	CreatedAt uint64 // Creation time of the INode (UNIX timestamp in seconds)
+	RegionID    uint64 // Unique identifier for the region
+	Position    uint64 // Position within the file
+	Length      uint32 // Data record length
+	ExpiredAt   uint64 // Expiration time of the INode (UNIX timestamp in seconds)
+	CreatedAt   uint64 // Creation time of the INode (UNIX timestamp in seconds)
+	MVCCVersion uint64
 }
 
 type indexMap struct {
@@ -96,11 +97,12 @@ func (lfs *LogStructuredFS) PutSegment(key string, seg *Segment) error {
 	// Update the inode metadata within a critical section.
 	lfs.mu.Lock()
 	inode := &INode{
-		RegionID:  lfs.regionID,
-		Position:  lfs.offset,
-		Length:    seg.Size(),
-		CreatedAt: seg.CreatedAt,
-		ExpiredAt: seg.ExpiredAt,
+		RegionID:    lfs.regionID,
+		Position:    lfs.offset,
+		Length:      seg.Size(),
+		CreatedAt:   seg.CreatedAt,
+		ExpiredAt:   seg.ExpiredAt,
+		MVCCVersion: 0,
 	}
 	lfs.offset += uint64(seg.Size())
 	lfs.mu.Unlock()
@@ -242,8 +244,36 @@ func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, ne
 	}
 
 	// MVCC: timestamp version is not modified by another thread
-	if atomic.CompareAndSwapUint64(&inode.CreatedAt, expected, newseg.CreatedAt) {
-		return lfs.PutSegment(key, newseg)
+	if atomic.CompareAndSwapUint64(&inode.MVCCVersion, expected, expected+1) {
+		err := appendDataWithLock(&lfs.mu, lfs.active, newseg)
+		if err != nil {
+			return fmt.Errorf("failed to update data: %w", err)
+		}
+
+		lfs.mu.Lock()
+		inode.Length = newseg.Size()
+		inode.Position = lfs.offset
+		lfs.offset += uint64(newseg.Size())
+		lfs.mu.Unlock()
+
+		if lfs.offset >= uint64(regionThreshold) {
+			lfs.mu.Lock()
+			err := lfs.createActiveRegion()
+			lfs.mu.Unlock()
+			if err != nil {
+				return err
+			}
+		}
+
+		lfs.mu.RLock()
+		defer lfs.mu.RUnlock()
+
+		imap := lfs.indexs[inum%uint64(indexShard)]
+		imap.mu.Lock()
+		imap.index[inum] = inode
+		imap.mu.Unlock()
+
+		return nil
 	}
 
 	return errors.New("failed to update data due to version conflict")
