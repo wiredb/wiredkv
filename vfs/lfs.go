@@ -209,7 +209,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 	}
 
 	// Return the fetched segment
-	return inode.MVCCVersion, segment, nil
+	return atomic.LoadUint64(&inode.MVCCVersion), segment, nil
 }
 
 func (lfs *LogStructuredFS) KeysCount() int {
