@@ -303,7 +303,7 @@ func TestUpdateSegmentWithCAS_Concurrent(t *testing.T) {
 	var failures int32
 	var success int32
 
-	concurrentUpdates := rand.Intn(1000)
+	concurrentUpdates := rand.Intn(100000)
 	for i := 0; i < concurrentUpdates; i++ {
 		wg.Add(1)
 		go func(id int) {

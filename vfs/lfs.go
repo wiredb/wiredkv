@@ -107,7 +107,7 @@ func (lfs *LogStructuredFS) PutSegment(key string, seg *Segment) error {
 	lfs.offset += uint64(seg.Size())
 	lfs.mu.Unlock()
 
-	if lfs.offset >= uint64(regionThreshold) {
+	if atomic.LoadUint64(&lfs.offset) >= uint64(regionThreshold) {
 		lfs.mu.Lock()
 		err := lfs.createActiveRegion()
 		lfs.mu.Unlock()
@@ -115,10 +115,6 @@ func (lfs *LogStructuredFS) PutSegment(key string, seg *Segment) error {
 			return err
 		}
 	}
-
-	// Use a read lock to prevent conflicts during index updates.
-	lfs.mu.RLock()
-	defer lfs.mu.RUnlock()
 
 	// Select an index shard based on the hash function and update it.
 	// To avoid locking the entire index, only the relevant shard is locked.
@@ -185,25 +181,20 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 	}
 
 	// Check if the inode is expired
-	if inode.ExpiredAt <= uint64(time.Now().UnixNano()) && inode.ExpiredAt != 0 {
+	if atomic.LoadUint64(&inode.ExpiredAt) <= uint64(time.Now().UnixNano()) &&
+		atomic.LoadUint64(&inode.ExpiredAt) != 0 {
 		imap.mu.Lock()
 		delete(imap.index, inum)
 		imap.mu.Unlock()
 		return 0, nil, fmt.Errorf("inode index for %d has expired", inum)
 	}
 
-	// Retrieve the corresponding data region
-	lfs.mu.RLock()
-	fd, ok := lfs.regions[inode.RegionID]
-	lfs.mu.RUnlock()
+	fd, ok := lfs.regions[atomic.LoadUint64(&inode.RegionID)]
 	if !ok {
 		return 0, nil, fmt.Errorf("data region with ID %d not found", inode.RegionID)
 	}
 
-	// Read the segment from the data region
-	lfs.mu.RLock()
-	defer lfs.mu.RUnlock()
-	_, segment, err := readSegment(fd, inode.Position, SEGMENT_PADDING)
+	_, segment, err := readSegment(fd, atomic.LoadUint64(&inode.Position), SEGMENT_PADDING)
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to read segment: %w", err)
 	}
@@ -251,6 +242,7 @@ func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, ne
 		return fmt.Errorf("inode index shard for %d not found", inum)
 	}
 
+	// 读取 inode 信息，使用读锁来防止并发写操作
 	imap.mu.RLock()
 	inode, ok := imap.index[inum]
 	imap.mu.RUnlock()
@@ -260,24 +252,24 @@ func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, ne
 
 	// MVCC: version is not modified by another thread
 	if atomic.CompareAndSwapUint64(&inode.MVCCVersion, expected, expected+1) {
+		// 更新数据时使用锁
 		err := appendDataWithLock(&lfs.mu, lfs.active, newseg)
 		if err != nil {
 			return fmt.Errorf("failed to update data: %w", err)
 		}
 
-		imap.mu.Lock()
-		imap.index[inum].Length = newseg.Size()
-		imap.index[inum].Position = lfs.offset
-		imap.index[inum].RegionID = lfs.regionID
-		imap.index[inum].CreatedAt = newseg.CreatedAt
-		imap.index[inum].ExpiredAt = newseg.ExpiredAt
-		imap.mu.Unlock()
+		// 修改 inode 信息时使用写锁
+		atomic.StoreUint32(&inode.Length, newseg.Size())
+		atomic.StoreUint64(&inode.RegionID, lfs.regionID)
+		atomic.StoreUint64(&inode.CreatedAt, newseg.CreatedAt)
+		atomic.StoreUint64(&inode.ExpiredAt, newseg.ExpiredAt)
+		atomic.StoreUint64(&inode.Position, atomic.LoadUint64(&lfs.offset))
 
-		lfs.mu.Lock()
-		lfs.offset += uint64(newseg.Size())
-		lfs.mu.Unlock()
+		// 使用原子操作更新 offset
+		atomic.AddUint64(&lfs.offset, uint64(newseg.Size()))
 
-		if lfs.offset >= uint64(regionThreshold) {
+		// 检查并创建新的区域
+		if atomic.LoadUint64(&lfs.offset) >= uint64(regionThreshold) {
 			lfs.mu.Lock()
 			err := lfs.createActiveRegion()
 			lfs.mu.Unlock()
@@ -1094,6 +1086,11 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 			lfs.dirtyRegion = append(lfs.dirtyRegion, lfs.regions[regionIds[i]])
 		}
 
+		// Cleanup dirty region
+		defer func() {
+			lfs.dirtyRegion = nil
+		}()
+
 		for _, fd := range lfs.dirtyRegion {
 			finfo, err := fd.Stat()
 			if err != nil {
@@ -1118,7 +1115,7 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 						continue
 					}
 
-					if isValid(segment, inode) {
+					if isValid(&imap.mu, segment, inode) {
 						err := appendDataWithLock(&lfs.mu, lfs.active, segment)
 						if err != nil {
 							return err
@@ -1133,9 +1130,7 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 						inode.RegionID = lfs.regionID
 						imap.mu.Unlock()
 
-						lfs.mu.Lock()
-						lfs.offset += uint64(segment.Size())
-						lfs.mu.Unlock()
+						atomic.AddUint64(&lfs.offset, uint64(segment.Size()))
 
 						readOffset += uint64(segment.Size())
 					} else {
@@ -1147,7 +1142,7 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 					return fmt.Errorf("imap is nil for inum = %d", inum)
 				}
 
-				if lfs.offset >= uint64(regionThreshold) {
+				if atomic.LoadUint64(&lfs.offset) >= uint64(regionThreshold) {
 					err := lfs.changeRegions()
 					if err != nil {
 						return fmt.Errorf("failed to close active migrate region: %w", err)
@@ -1164,8 +1159,6 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 			}
 
 		}
-		// Cleanup dirty region
-		lfs.dirtyRegion = nil
 	} else {
 		clog.Warnf("dirty region (%d%%) does not meet garbage collection status", len(lfs.regions)/10)
 	}
@@ -1173,7 +1166,9 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 	return nil
 }
 
-func isValid(seg *Segment, inode *INode) bool {
+func isValid(mu *sync.RWMutex, seg *Segment, inode *INode) bool {
+	mu.Lock()
+	defer mu.Unlock()
 	return !seg.IsTombstone() &&
 		seg.CreatedAt == inode.CreatedAt &&
 		(seg.ExpiredAt == 0 || uint64(time.Now().UnixNano()) < seg.ExpiredAt)
