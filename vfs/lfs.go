@@ -212,6 +212,23 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 	return atomic.LoadUint64(&inode.MVCCVersion), segment, nil
 }
 
+func (lfs *LogStructuredFS) GetMVCCVersion(key string) (uint64, error) {
+	inum := InodeNum(key)
+	imap := lfs.indexs[inum%uint64(indexShard)]
+	if imap == nil {
+		return 0, fmt.Errorf("inode index shard for %d not found", inum)
+	}
+
+	imap.mu.RLock()
+	inode, ok := imap.index[inum]
+	imap.mu.RUnlock()
+	if !ok {
+		return 0, fmt.Errorf("inode index for %d not found", inum)
+	}
+
+	return atomic.LoadUint64(&inode.MVCCVersion), nil
+}
+
 func (lfs *LogStructuredFS) KeysCount() int {
 	keys := 0
 	for _, imap := range lfs.indexs {
