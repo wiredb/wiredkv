@@ -58,12 +58,12 @@ type Options struct {
 
 // INode represents a file system node with metadata.
 type INode struct {
-	RegionID    uint64 // Unique identifier for the region
-	Position    uint64 // Position within the file
-	Length      uint32 // Data record length
-	ExpiredAt   uint64 // Expiration time of the INode (UNIX timestamp in seconds)
-	CreatedAt   uint64 // Creation time of the INode (UNIX timestamp in seconds)
-	MVCCVersion uint64
+	RegionID  uint64 // Unique identifier for the region
+	Position  uint64 // Position within the file
+	Length    uint32 // Data record length
+	ExpiredAt uint64 // Expiration time of the INode (UNIX timestamp in seconds)
+	CreatedAt uint64 // Creation time of the INode (UNIX timestamp in seconds)
+	mvcc      uint64 // Multi-version concurrency ID
 }
 
 type indexMap struct {
@@ -97,12 +97,12 @@ func (lfs *LogStructuredFS) PutSegment(key string, seg *Segment) error {
 	// Update the inode metadata within a critical section.
 	lfs.mu.Lock()
 	inode := &INode{
-		RegionID:    lfs.regionID,
-		Position:    lfs.offset,
-		Length:      seg.Size(),
-		CreatedAt:   seg.CreatedAt,
-		ExpiredAt:   seg.ExpiredAt,
-		MVCCVersion: 0,
+		RegionID:  lfs.regionID,
+		Position:  lfs.offset,
+		Length:    seg.Size(),
+		CreatedAt: seg.CreatedAt,
+		ExpiredAt: seg.ExpiredAt,
+		mvcc:      0,
 	}
 	lfs.offset += uint64(seg.Size())
 	lfs.mu.Unlock()
@@ -157,9 +157,7 @@ func (lfs *LogStructuredFS) DeleteSegment(key string) error {
 		return err
 	}
 
-	lfs.mu.Lock()
-	lfs.offset += uint64(seg.Size())
-	lfs.mu.Unlock()
+	atomic.AddUint64(&lfs.offset, uint64(seg.Size()))
 
 	return nil
 }
@@ -181,7 +179,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 	}
 
 	// Check if the inode is expired
-	if atomic.LoadUint64(&inode.ExpiredAt) <= uint64(time.Now().UnixNano()) &&
+	if atomic.LoadUint64(&inode.ExpiredAt) <= uint64(time.Now().Unix()) &&
 		atomic.LoadUint64(&inode.ExpiredAt) != 0 {
 		imap.mu.Lock()
 		delete(imap.index, inum)
@@ -200,24 +198,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 	}
 
 	// Return the fetched segment
-	return atomic.LoadUint64(&inode.MVCCVersion), segment, nil
-}
-
-func (lfs *LogStructuredFS) GetMVCCVersion(key string) (uint64, error) {
-	inum := InodeNum(key)
-	imap := lfs.indexs[inum%uint64(indexShard)]
-	if imap == nil {
-		return 0, fmt.Errorf("inode index shard for %d not found", inum)
-	}
-
-	imap.mu.RLock()
-	inode, ok := imap.index[inum]
-	imap.mu.RUnlock()
-	if !ok {
-		return 0, fmt.Errorf("inode index for %d not found", inum)
-	}
-
-	return atomic.LoadUint64(&inode.MVCCVersion), nil
+	return atomic.LoadUint64(&inode.mvcc), segment, nil
 }
 
 func (lfs *LogStructuredFS) KeysCount() int {
@@ -251,7 +232,7 @@ func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, ne
 	}
 
 	// MVCC: version is not modified by another thread
-	if atomic.CompareAndSwapUint64(&inode.MVCCVersion, expected, expected+1) {
+	if atomic.CompareAndSwapUint64(&inode.mvcc, expected, expected+1) {
 		// 更新数据时使用锁
 		err := appendDataWithLock(&lfs.mu, lfs.active, newseg)
 		if err != nil {
@@ -259,11 +240,11 @@ func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, ne
 		}
 
 		// 修改 inode 信息时使用写锁
-		atomic.StoreUint32(&inode.Length, newseg.Size())
-		atomic.StoreUint64(&inode.RegionID, lfs.regionID)
+		atomic.StoreUint64(&inode.Position, atomic.LoadUint64(&lfs.offset))
 		atomic.StoreUint64(&inode.CreatedAt, newseg.CreatedAt)
 		atomic.StoreUint64(&inode.ExpiredAt, newseg.ExpiredAt)
-		atomic.StoreUint64(&inode.Position, atomic.LoadUint64(&lfs.offset))
+		atomic.StoreUint64(&inode.RegionID, lfs.regionID)
+		atomic.StoreUint32(&inode.Length, newseg.Size())
 
 		// 使用原子操作更新 offset
 		atomic.AddUint64(&lfs.offset, uint64(newseg.Size()))
@@ -726,18 +707,18 @@ func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) erro
 					continue
 				}
 
-				if segment.ExpiredAt <= uint64(time.Now().UnixNano()) && segment.ExpiredAt != 0 {
+				if segment.ExpiredAt <= uint64(time.Now().Unix()) && segment.ExpiredAt != 0 {
 					offset += uint64(segment.Size())
 					continue
 				}
 
 				imap.index[inum] = &INode{
-					RegionID:    regionId,
-					Position:    offset,
-					Length:      segment.Size(),
-					CreatedAt:   segment.CreatedAt,
-					ExpiredAt:   segment.ExpiredAt,
-					MVCCVersion: 0,
+					RegionID:  regionId,
+					Position:  offset,
+					Length:    segment.Size(),
+					CreatedAt: segment.CreatedAt,
+					ExpiredAt: segment.ExpiredAt,
+					mvcc:      0,
 				}
 
 				offset += uint64(segment.Size())
@@ -1125,10 +1106,8 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 						delete(lfs.regions, inode.RegionID)
 						lfs.mu.Unlock()
 
-						imap.mu.Lock()
-						inode.Position = lfs.offset
-						inode.RegionID = lfs.regionID
-						imap.mu.Unlock()
+						atomic.AddUint64(&inode.Position, atomic.LoadUint64(&lfs.offset))
+						atomic.AddUint64(&inode.RegionID, atomic.LoadUint64(&lfs.regionID))
 
 						atomic.AddUint64(&lfs.offset, uint64(segment.Size()))
 
@@ -1171,7 +1150,7 @@ func isValid(mu *sync.RWMutex, seg *Segment, inode *INode) bool {
 	defer mu.Unlock()
 	return !seg.IsTombstone() &&
 		seg.CreatedAt == inode.CreatedAt &&
-		(seg.ExpiredAt == 0 || uint64(time.Now().UnixNano()) < seg.ExpiredAt)
+		(seg.ExpiredAt == 0 || uint64(time.Now().Unix()) < seg.ExpiredAt)
 }
 
 // Start serializing little-endian data, needs to compress seg before writing.
