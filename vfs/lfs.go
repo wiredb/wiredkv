@@ -88,15 +88,27 @@ type LogStructuredFS struct {
 // PutSegment inserts a Segment record into the LogStructuredFS virtual file system.
 func (lfs *LogStructuredFS) PutSegment(key string, seg *Segment) error {
 	inum := InodeNum(key)
-	// Append data to the active region with a lock.
-	err := appendDataWithLock(&lfs.mu, lfs.active, seg)
+
+	bytes, err := serializedSegment(seg)
 	if err != nil {
 		return err
 	}
 
-	// Update the inode metadata within a critical section.
 	lfs.mu.Lock()
-	inode := &INode{
+	defer lfs.mu.Unlock()
+
+	// Append data to the active region with a lock.
+	err = appendToActiveRegion(lfs.active, bytes)
+	if err != nil {
+		return err
+	}
+
+	// Select an index shard based on the hash function and update it.
+	// To avoid locking the entire index, only the relevant shard is locked.
+	imap := lfs.indexs[inum%uint64(indexShard)]
+	imap.mu.Lock()
+	// Update the inode metadata within a critical section.
+	imap.index[inum] = &INode{
 		RegionID:  lfs.regionID,
 		Position:  lfs.offset,
 		Length:    seg.Size(),
@@ -104,24 +116,16 @@ func (lfs *LogStructuredFS) PutSegment(key string, seg *Segment) error {
 		ExpiredAt: seg.ExpiredAt,
 		mvcc:      0,
 	}
-	lfs.offset += uint64(seg.Size())
-	lfs.mu.Unlock()
+	imap.mu.Unlock()
 
-	if atomic.LoadUint64(&lfs.offset) >= uint64(regionThreshold) {
-		lfs.mu.Lock()
+	lfs.offset += uint64(seg.Size())
+
+	if lfs.offset >= uint64(regionThreshold) {
 		err := lfs.createActiveRegion()
-		lfs.mu.Unlock()
 		if err != nil {
 			return err
 		}
 	}
-
-	// Select an index shard based on the hash function and update it.
-	// To avoid locking the entire index, only the relevant shard is locked.
-	imap := lfs.indexs[inum%uint64(indexShard)]
-	imap.mu.Lock()
-	imap.index[inum] = inode
-	imap.mu.Unlock()
 
 	return nil
 }
@@ -139,38 +143,42 @@ func (lfs *LogStructuredFS) BatchFetchSegments(keys ...string) ([]*Segment, erro
 }
 
 func (lfs *LogStructuredFS) DeleteSegment(key string) error {
-	inum := InodeNum(key)
-	// Calculate the index shard
-	imap := lfs.indexs[inum%uint64(indexShard)]
-	if imap == nil {
-		return fmt.Errorf("inode index shard for %d not found", inum)
+	seg := NewTombstoneSegment(key)
+
+	bytes, err := serializedSegment(seg)
+	if err != nil {
+		return err
 	}
 
-	// Check if the inode is expired
-	imap.mu.Lock()
-	delete(imap.index, inum)
-	imap.mu.Unlock()
-
-	seg := NewTombstoneSegment(key)
-	err := appendDataWithLock(&lfs.mu, lfs.active, seg)
+	lfs.mu.Lock()
+	err = appendToActiveRegion(lfs.active, bytes)
+	lfs.mu.Unlock()
 	if err != nil {
 		return err
 	}
 
 	atomic.AddUint64(&lfs.offset, uint64(seg.Size()))
 
+	inum := InodeNum(key)
+	imap := lfs.indexs[inum%uint64(indexShard)]
+	if imap == nil {
+		return fmt.Errorf("inode index shard for %d not found", inum)
+	}
+
+	imap.mu.Lock()
+	delete(imap.index, inum)
+	imap.mu.Unlock()
+
 	return nil
 }
 
 func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 	inum := InodeNum(key)
-	// Calculate the index shard
 	imap := lfs.indexs[inum%uint64(indexShard)]
 	if imap == nil {
 		return 0, nil, fmt.Errorf("inode index shard for %d not found", inum)
 	}
 
-	// Retrieve inode info
 	imap.mu.RLock()
 	inode, ok := imap.index[inum]
 	imap.mu.RUnlock()
@@ -178,7 +186,6 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 		return 0, nil, fmt.Errorf("inode index for %d not found", inum)
 	}
 
-	// Check if the inode is expired
 	if atomic.LoadUint64(&inode.ExpiredAt) <= uint64(time.Now().Unix()) &&
 		atomic.LoadUint64(&inode.ExpiredAt) != 0 {
 		imap.mu.Lock()
@@ -197,7 +204,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 		return 0, nil, fmt.Errorf("failed to read segment: %w", err)
 	}
 
-	// Return the fetched segment
+	// Return the fetched segment and multi-version concurrency ID
 	return atomic.LoadUint64(&inode.mvcc), segment, nil
 }
 
@@ -233,8 +240,14 @@ func (lfs *LogStructuredFS) UpdateSegmentWithCAS(key string, expected uint64, ne
 
 	// MVCC: version is not modified by another thread
 	if atomic.CompareAndSwapUint64(&inode.mvcc, expected, expected+1) {
+		bytes, err := serializedSegment(newseg)
+		if err != nil {
+			return err
+		}
 		// 更新数据时使用锁
-		err := appendDataWithLock(&lfs.mu, lfs.active, newseg)
+		lfs.mu.Lock()
+		err = appendToActiveRegion(lfs.active, bytes)
+		lfs.mu.Unlock()
 		if err != nil {
 			return fmt.Errorf("failed to update data: %w", err)
 		}
@@ -456,7 +469,7 @@ func (lfs *LogStructuredFS) StartRegionGC(cycle_second time.Duration) {
 				lfs.gcstate = GC_INACTIVE
 			case <-lfs.gcdone:
 				// If garbage collection is running, delay its exit to prevent dirty data
-				// from being generated due to interrupted operations.
+				// From being generated due to interrupted operations.
 				for lfs.gcstate == GC_ACTIVE {
 					time.Sleep(3 * time.Second)
 				}
@@ -640,10 +653,10 @@ func recoveryIndex(fd *os.File, indexs []*indexMap) error {
 			} else {
 				// This corresponds to the condition len(queue) == 0 in the for loop.
 				// It prevents a situation where the consumer goroutine has encountered an error and stopped,
-				// but the producer goroutine is still reading and deserializing the index.
+				// But the producer goroutine is still reading and deserializing the index.
 				// As a result, it avoids delaying the execution of defer wg.Done(), which would perform meaningless work.
 				// The goal is to resume the blocked wg.Wait() as quickly as possible,
-				// allowing the main goroutine to return promptly.
+				// Allowing the main goroutine to return promptly.
 				equeue <- errors.New("no corresponding index shard")
 				return
 			}
@@ -1053,6 +1066,9 @@ func serializedSegment(seg *Segment) ([]byte, error) {
 // 8. If the in-memory index is used to locate records, it becomes impossible to determine if a file has been fully scanned.
 // 9. This is because records in the in-memory index may be distributed across multiple data files on disk.
 func (lfs *LogStructuredFS) compressDirtyRegion() error {
+	lfs.mu.Lock()
+	defer lfs.mu.Unlock()
+
 	if len(lfs.regions) >= 5 {
 		var regionIds []uint64
 		for v := range lfs.regions {
@@ -1097,7 +1113,14 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 					}
 
 					if isValid(&imap.mu, segment, inode) {
-						err := appendDataWithLock(&lfs.mu, lfs.active, segment)
+						bytes, err := serializedSegment(segment)
+						if err != nil {
+							return err
+						}
+
+						lfs.mu.Lock()
+						err = appendToActiveRegion(lfs.active, bytes)
+						lfs.mu.Unlock()
 						if err != nil {
 							return err
 						}
@@ -1129,9 +1152,7 @@ func (lfs *LogStructuredFS) compressDirtyRegion() error {
 				}
 
 				// Delete dirty region file
-				lfs.mu.Lock()
 				err = os.Remove(filepath.Join(lfs.directory, fd.Name()))
-				lfs.mu.Unlock()
 				if err != nil {
 					return fmt.Errorf("failed to remove dirty region: %w", err)
 				}
@@ -1154,23 +1175,17 @@ func isValid(mu *sync.RWMutex, seg *Segment, inode *INode) bool {
 }
 
 // Start serializing little-endian data, needs to compress seg before writing.
-func appendDataWithLock(mux *sync.RWMutex, fd *os.File, seg *Segment) error {
-	bytes, err := serializedSegment(seg)
-	if err != nil {
-		return err
-	}
-
-	mux.Lock()
-	defer mux.Unlock()
-
+func appendToActiveRegion(fd *os.File, bytes []byte) error {
 	// Write the byte stream to the file
 	n, err := fd.Write(bytes)
 	if err != nil {
 		return fmt.Errorf("failed to append binary data to active region: %w", err)
 	}
+
 	// Check if the number of written bytes matches
 	if n != len(bytes) {
 		return fmt.Errorf("partial write error: expected %d bytes, but wrote %d bytes", len(bytes), n)
 	}
+
 	return nil
 }

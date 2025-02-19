@@ -250,6 +250,27 @@ func BenchmarkVFSWrite(b *testing.B) {
 	}
 }
 
+func BenchmarkVFSReads(b *testing.B) {
+	fss, err := OpenFS(&Options{
+		FSPerm:    conf.FSPerm,
+		Path:      conf.Settings.Path,
+		Threshold: conf.Settings.Region.Threshold,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		key := fmt.Sprintf("key-%d", i)
+		_, _, err := fss.FetchSegment(key)
+		if err != nil {
+			b.Logf("%v", err)
+		}
+	}
+}
+
 func TestUpdateSegmentWithCAS_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
@@ -343,4 +364,69 @@ func TestUpdateSegmentWithCAS_Concurrent(t *testing.T) {
 	if failures == 0 && (failures+success) != int32(concurrentUpdates) {
 		t.Error("Expected some CAS failures, but got none")
 	}
+}
+
+func TestConcurrentPutAndFetchSegment(t *testing.T) {
+	var wg sync.WaitGroup
+	fss, err := OpenFS(&Options{
+		FSPerm:    conf.FSPerm,
+		Path:      conf.Settings.Path,
+		Threshold: conf.Settings.Region.Threshold,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 定义并发数量
+	concurrentWrites := 100 // 写操作并发数
+	concurrentReads := 100  // 读操作并发数
+
+	wg.Add(concurrentWrites)
+	// 存储测试数据
+	for i := 0; i < concurrentWrites; i++ {
+		go func(id int) {
+			defer wg.Done()
+			// 创建 segment
+			k := fmt.Sprintf("key-%d", id)
+			segment, err := NewSegment(k, types.NewNumber(int64(id)), 0)
+			if err != nil {
+				t.Errorf("failed to create segment for key %s: %v", k, err)
+				return
+			}
+
+			// 存储 segment
+			err = fss.PutSegment(k, segment)
+			if err != nil {
+				t.Errorf("failed to put segment for key %s: %v", k, err)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	for i := 0; i < concurrentReads; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			k := fmt.Sprintf("key-%d", id)
+
+			// 获取 segment
+			_, seg, err := fss.FetchSegment(k)
+			if err != nil {
+				t.Errorf("failed to fetch segment for key: %s \t %v", k, err)
+				return
+			}
+
+			// 转换为 number 并验证
+			number, err := seg.ToNumber()
+			if err != nil {
+				t.Errorf("failed to convert segment to number for key %s \t %v", k, err)
+			}
+
+			t.Logf("K:%s\tV:%v", k, number.Get())
+		}(i)
+	}
+
+	// 等待所有 goroutine 完成
+	wg.Wait()
 }

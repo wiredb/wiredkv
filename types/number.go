@@ -8,7 +8,11 @@ import (
 
 // Number 结构体，表示带有数值的类型，支持原子操作
 type Number struct {
-	Value int64 `json:"number"` // 用于 BSON 序列化的字段
+	Value int64 `bson:"number"` // 用于 BSON 序列化的字段
+}
+
+func NewNumber(n int64) *Number {
+	return &Number{Value: n}
 }
 
 // ToBSON 将 Number 序列化为 BSON
