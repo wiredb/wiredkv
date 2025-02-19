@@ -125,7 +125,7 @@ func (hs *HttpServer) Shutdown() error {
 		// 这里发生了错误，外层处理这个错误时也要关闭文件存储系统
 		innerErr := closeStorage()
 		if innerErr != nil {
-			return fmt.Errorf("failed to shutdown http server: %w", innerErr)
+			return fmt.Errorf("failed to shutdown the server: %w", errors.Join(err, innerErr))
 		}
 		return err
 	}
@@ -136,7 +136,7 @@ func closeStorage() error {
 	if storage != nil {
 		err := storage.CloseFS()
 		if err != nil {
-			return fmt.Errorf("failed to shutdown the storage engine: %w", err)
+			return err
 		}
 		return storage.ExportSnapshotIndex()
 	}
