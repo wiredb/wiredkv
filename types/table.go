@@ -23,7 +23,7 @@ import "gopkg.in/mgo.v2/bson"
 // {"code":200,"message":"request processed successfully!"}
 
 type Tables struct {
-	Table map[string]any `json:"table"`
+	Table map[string]any `json:"table" bson:"table"`
 	TTL   uint64         `json:"ttl,omitempty"`
 }
 

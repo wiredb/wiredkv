@@ -8,7 +8,7 @@ import (
 )
 
 type List struct {
-	List []any  `json:"list"`
+	List []any  `json:"list" bson:"list"`
 	TTL  uint64 `json:"ttl,omitempty"`
 }
 

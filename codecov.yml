@@ -2,3 +2,4 @@ ignore:
   - (?s:example/[^\/]+\.go.*)\Z
   - ^doc.go.*
   - (?s:[^\/]+_test\.go.*)\Z
+  - cmd/process.go

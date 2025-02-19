@@ -8,7 +8,7 @@ import (
 
 // ZSet 是一个实现有序集合的结构
 type ZSet struct {
-	ZSet         map[string]float64 `json:"ZSet"`
+	ZSet         map[string]float64 `json:"zset" bson:"zset"`
 	TTL          uint64             `json:"ttl,omitempty"`
 	sortedScores []string
 }

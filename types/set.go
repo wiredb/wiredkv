@@ -3,7 +3,7 @@ package types
 import "gopkg.in/mgo.v2/bson"
 
 type Set struct {
-	Set map[string]bool `json:"set"`
+	Set map[string]bool `json:"set" bson:"set"`
 	TTL uint64          `json:"ttl,omitempty"`
 }
 
