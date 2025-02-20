@@ -2,7 +2,6 @@ package types
 
 import (
 	"errors"
-	"sort"
 
 	"gopkg.in/mgo.v2/bson"
 )
@@ -10,6 +9,10 @@ import (
 type List struct {
 	List []any  `json:"list" bson:"list"`
 	TTL  uint64 `json:"ttl,omitempty"`
+}
+
+func NewList() *List {
+	return new(List)
 }
 
 // AddItem 向 List 中添加新项目
@@ -56,31 +59,6 @@ func (ls *List) RPush(item any) {
 
 func (ls *List) Size() int {
 	return len(ls.List)
-}
-
-func (ls *List) Sorted() error {
-	if len(ls.List) <= 0 {
-		return nil
-	}
-
-	switch ls.List[0].(type) {
-	case int64:
-		sort.Slice(ls.List, func(i, j int) bool {
-			return ls.List[i].(int64) < ls.List[j].(int64)
-		})
-	case float64:
-		sort.Slice(ls.List, func(i, j int) bool {
-			return ls.List[i].(float64) < ls.List[j].(float64)
-		})
-	case string:
-		sort.Slice(ls.List, func(i, j int) bool {
-			return ls.List[i].(string) < ls.List[j].(string)
-		})
-	default:
-		return errors.New("unsupported type for sorting")
-	}
-
-	return nil
 }
 
 func (ls *List) Clear() {
