@@ -46,7 +46,7 @@ var (
 	fileExtension    = ".wdb"
 	indexFileName    = "index.wdb"
 	regionThreshold  = int64(1 * GB) // 1GB
-	dataFileMetadata = []byte{0x01, 0x01, 0x00, 0xDB}
+	dataFileMetadata = []byte{0xDB, 0x00, 0x01, 0x01}
 	transformer      = NewTransformer()
 )
 
@@ -61,8 +61,8 @@ type INode struct {
 	RegionID  uint64 // Unique identifier for the region
 	Position  uint64 // Position within the file
 	Length    uint32 // Data record length
-	ExpiredAt uint64 // Expiration time of the INode (UNIX timestamp in seconds)
-	CreatedAt uint64 // Creation time of the INode (UNIX timestamp in seconds)
+	ExpiredAt uint64 // Expiration time of the INode (UNIX timestamp in nano seconds)
+	CreatedAt uint64 // Creation time of the INode (UNIX timestamp in nano seconds)
 	mvcc      uint64 // Multi-version concurrency ID
 }
 
@@ -186,7 +186,7 @@ func (lfs *LogStructuredFS) FetchSegment(key string) (uint64, *Segment, error) {
 		return 0, nil, fmt.Errorf("inode index for %d not found", inum)
 	}
 
-	if atomic.LoadUint64(&inode.ExpiredAt) <= uint64(time.Now().Unix()) &&
+	if atomic.LoadUint64(&inode.ExpiredAt) <= uint64(time.Now().UnixNano()) &&
 		atomic.LoadUint64(&inode.ExpiredAt) != 0 {
 		imap.mu.Lock()
 		delete(imap.index, inum)
@@ -720,7 +720,7 @@ func crashRecoveryAllIndex(regions map[uint64]*os.File, indexs []*indexMap) erro
 					continue
 				}
 
-				if segment.ExpiredAt <= uint64(time.Now().Unix()) && segment.ExpiredAt != 0 {
+				if segment.ExpiredAt <= uint64(time.Now().UnixNano()) && segment.ExpiredAt != 0 {
 					offset += uint64(segment.Size())
 					continue
 				}
