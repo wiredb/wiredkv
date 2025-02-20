@@ -123,9 +123,9 @@ func (hs *HttpServer) Shutdown() error {
 	err := hs.serv.Shutdown(context.Background())
 	if err != nil && err != http.ErrServerClosed {
 		// 这里发生了错误，外层处理这个错误时也要关闭文件存储系统
-		innerErr := closeStorage()
-		if innerErr != nil {
-			return fmt.Errorf("failed to shutdown the server: %w", errors.Join(err, innerErr))
+		inner := closeStorage()
+		if inner != nil {
+			return fmt.Errorf("failed to shutdown the server: %w", errors.Join(err, inner))
 		}
 		return err
 	}

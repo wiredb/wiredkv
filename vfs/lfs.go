@@ -549,7 +549,7 @@ func (lfs *LogStructuredFS) CloseFS() error {
 	}
 
 	// If there is a snapshot of the index file, recover from the snapshot.
-	// Otherwise, perform a global scan.
+	// otherwise, perform a global scan.
 	return lfs.ExportSnapshotIndex()
 }
 
@@ -1068,6 +1068,9 @@ func serializedSegment(seg *Segment) ([]byte, error) {
 func (lfs *LogStructuredFS) compressDirtyRegion() error {
 	lfs.mu.Lock()
 	defer lfs.mu.Unlock()
+
+	// 修改 GC 的状态为运行状态
+	lfs.gcstate = GC_ACTIVE
 
 	if len(lfs.regions) >= 5 {
 		var regionIds []uint64

@@ -17,7 +17,6 @@ const (
 	List
 	Text
 	Tables
-	Binary
 	Number
 	Unknown
 )
@@ -181,7 +180,7 @@ func (s *Segment) TTL() int64 {
 // 将类型映射为 Kind 的辅助函数
 func toKind(data Serializable) (Kind, error) {
 	switch data.(type) {
-	case types.Set:
+	case *types.Set:
 		return Set, nil
 	case types.ZSet:
 		return ZSet, nil

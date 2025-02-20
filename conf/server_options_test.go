@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfigLoad(t *testing.T) {
@@ -273,4 +276,123 @@ func TestServerOptions_ToString(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHasCustom tests HasCustom method to check if custom config is provided
+func TestHasCustom(t *testing.T) {
+	assert.True(t, HasCustom("/path/to/custom/config.yaml"))
+	assert.False(t, HasCustom(defaultFilePath))
+}
+
+// TestVaildated tests the configuration validation
+func TestVaildated(t *testing.T) {
+	// Valid configuration
+	validConfig := &ServerOptions{
+		Port:     2668,
+		Path:     "/tmp/wiredb",
+		Password: "securepassword",
+		Region: Region{
+			Enable:    true,
+			Second:    18000,
+			Threshold: 3,
+		},
+		Encryptor: Encryptor{
+			Enable: true,
+			Secret: "1234567890123456",
+		},
+		Compressor: Compressor{
+			Enable: false,
+		},
+	}
+
+	// Should pass validation
+	err := Vaildated(validConfig)
+	assert.NoError(t, err)
+
+	// Invalid configuration: port out of range
+	invalidConfig := *validConfig
+	invalidConfig.Port = 70000 // Invalid port number
+
+	err = Vaildated(&invalidConfig)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "port range must be between 1025 and 65534")
+
+	// Invalid configuration: empty path
+	invalidConfig = *validConfig
+	invalidConfig.Path = ""
+
+	err = Vaildated(&invalidConfig)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "data directory path cannot be empty")
+
+	// Invalid configuration: invalid secret key length
+	invalidConfig = *validConfig
+	invalidConfig.Encryptor.Secret = "short" // Invalid secret key length
+
+	err = Vaildated(&invalidConfig)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid secret key length it must be 16, 24, or 32 bytes")
+}
+
+// TestSaved tests saving the configuration to a file
+func TestSaved(t *testing.T) {
+	// Prepare server options to save
+	opt := &ServerOptions{
+		Port:     8080,
+		Path:     "/tmp/myconfig",
+		Password: "testpassword",
+	}
+
+	// Use a temporary directory to save the config
+	tempFile := filepath.Join(t.TempDir(), "test_config.yaml")
+	err := opt.SavedAs(tempFile)
+	require.NoError(t, err)
+
+	// Check if the file exists
+	_, err = os.Stat(tempFile)
+	require.NoError(t, err)
+
+	// Check if the file contains valid data
+	var loadedOpt ServerOptions
+	err = Load(tempFile, &loadedOpt)
+	require.NoError(t, err)
+
+	// Ensure the saved config matches the original
+	assert.Equal(t, opt.Port, loadedOpt.Port)
+	assert.Equal(t, opt.Path, loadedOpt.Path)
+	assert.Equal(t, opt.Password, loadedOpt.Password)
+}
+
+// TestMarshal tests the Marshal method to convert ServerOptions to JSON
+func TestMarshal(t *testing.T) {
+	opt := &ServerOptions{
+		Port:     8080,
+		Path:     "/tmp/myconfig",
+		Password: "testpassword",
+	}
+
+	// Marshal the options to JSON
+	data, err := opt.Marshal()
+	require.NoError(t, err)
+
+	// Verify the marshaled data is correct
+	expectedJSON := `{"port":8080,"path":"/tmp/myconfig","debug":false,"logpath":"","auth":"testpassword","region":{"enable":false,"second":0,"threshold":0},"encryptor":{"enable":false,"secret":""},"compressor":{"enable":false},"allowip":null}`
+	assert.JSONEq(t, expectedJSON, string(data))
+}
+
+// TestString tests the String method to convert ServerOptions to string
+func TestString(t *testing.T) {
+	opt := &ServerOptions{
+		Port:     8080,
+		Path:     "/tmp/myconfig",
+		Password: "testpassword",
+	}
+
+	// Get the string representation of the options
+	str := opt.String()
+
+	// Ensure the string contains expected values
+	assert.Contains(t, str, "8080")
+	assert.Contains(t, str, "/tmp/myconfig")
+	assert.Contains(t, str, "testpassword")
 }

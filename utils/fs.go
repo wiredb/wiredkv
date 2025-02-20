@@ -29,11 +29,18 @@ func IsDir(path string) bool {
 func FlushToDisk(fd *os.File) error {
 	err := fd.Sync()
 	if err != nil {
-		return fmt.Errorf("failed to sync file: %w", err)
+		return fmt.Errorf("failed to flush to disk: %w", err)
 	}
+
 	err = fd.Close()
 	if err != nil {
 		return fmt.Errorf("failed to close file: %w", err)
 	}
+
 	return nil
+}
+
+// BytesToGB converts a given size in bytes to gigabytes (GB).
+func BytesToGB(bytes uint64) float64 {
+	return float64(bytes) / (1024 * 1024 * 1024)
 }

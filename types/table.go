@@ -27,6 +27,11 @@ type Tables struct {
 	TTL   uint64         `json:"ttl,omitempty"`
 }
 
+func (tab *Tables) Clear() {
+	tab.TTL = 0
+	tab.Table = make(map[string]any)
+}
+
 func (tab Tables) ToBSON() ([]byte, error) {
 	return bson.Marshal(tab.Table)
 }

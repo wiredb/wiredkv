@@ -1,50 +1,105 @@
-package types_test
+package types
 
 import (
-	"errors"
 	"testing"
 
-	"github.com/auula/wiredkv/types"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestList(t *testing.T) {
-	ls := new(types.List)
+func TestList_AddItem(t *testing.T) {
+	list := NewList()
 
-	// 测试 AddItem
-	ls.AddItem(10)
-	ls.AddItem("hello")
-	ls.AddItem(20.5)
-	assert.Equal(t, 3, ls.Size(), "List 应该有 3 个元素")
+	// Test adding an item
+	item := "test item"
+	list.AddItem(item)
 
-	// 测试 GetItem
-	item, err := ls.GetItem(1)
-	assert.Nil(t, err)
-	assert.Equal(t, "hello", item)
+	// Assert the item is added to the list
+	assert.Equal(t, 1, list.Size())
+	assert.Contains(t, list.List, item)
+}
 
-	// 测试 Remove
-	err = ls.Remove("hello")
-	assert.Nil(t, err)
-	assert.Equal(t, 2, ls.Size(), "List 应该有 2 个元素")
+func TestList_Remove(t *testing.T) {
+	list := NewList()
+	item := "test item"
+	list.AddItem(item)
 
-	err = ls.Remove("not_exist")
-	assert.Equal(t, errors.New("list item not found"), err)
+	// Test removing an existing item
+	err := list.Remove(item)
+	assert.NoError(t, err)
+	assert.NotContains(t, list.List, item)
 
-	// 测试 Rnage
-	ls.AddItem(30)
-	rangeItems, err := ls.Rnage(0, 1)
-	assert.Nil(t, err)
-	assert.Equal(t, []any{10, 20.5}, rangeItems)
+	// Test removing a non-existing item
+	err = list.Remove("non-existing item")
+	assert.Error(t, err)
+}
 
-	// 测试 LPush
-	ls.LPush(5)
-	assert.Equal(t, 5, ls.List[0], "LPush 应该在列表前插入 5")
+func TestList_GetItem(t *testing.T) {
+	list := NewList()
+	item := "test item"
+	list.AddItem(item)
 
-	// 测试 RPush
-	ls.RPush(40)
-	assert.Equal(t, 40, ls.List[ls.Size()-1], "RPush 应该在列表末尾插入 40")
+	// Test getting an item by index
+	gotItem, err := list.GetItem(0)
+	assert.NoError(t, err)
+	assert.Equal(t, item, gotItem)
 
-	// 测试 Clear
-	ls.Clear()
-	assert.Equal(t, 0, ls.Size(), "Clear 之后 List 应该为空")
+	// Test out-of-bounds index
+	_, err = list.GetItem(1)
+	assert.Error(t, err)
+}
+
+func TestList_Range(t *testing.T) {
+	list := NewList()
+	list.AddItem("item 1")
+	list.AddItem("item 2")
+	list.AddItem("item 3")
+
+	// Test range function
+	rangeItems, err := list.Rnage(0, 1)
+	assert.NoError(t, err)
+	assert.Equal(t, []any{"item 1", "item 2"}, rangeItems)
+
+	// Test out-of-bounds range
+	rangeItems, err = list.Rnage(2, 5)
+	assert.NoError(t, err)
+	assert.Equal(t, []any{"item 3"}, rangeItems)
+}
+
+func TestList_LPush(t *testing.T) {
+	list := NewList()
+	list.AddItem("item 1")
+	list.LPush("new item")
+
+	// Test LPush functionality
+	assert.Equal(t, 2, list.Size())
+	assert.Equal(t, "new item", list.List[0])
+}
+
+func TestList_RPush(t *testing.T) {
+	list := NewList()
+	list.AddItem("item 1")
+	list.RPush("new item")
+
+	// Test RPush functionality
+	assert.Equal(t, 2, list.Size())
+	assert.Equal(t, "new item", list.List[1])
+}
+
+func TestList_Clear(t *testing.T) {
+	list := NewList()
+	list.AddItem("item 1")
+	list.Clear()
+
+	// Test clear functionality
+	assert.Equal(t, 0, list.Size())
+	assert.Equal(t, uint64(0), list.TTL)
+}
+
+func TestList_ToBSON(t *testing.T) {
+	list := NewList()
+	list.AddItem("item 1")
+
+	// Test ToBSON
+	_, err := list.ToBSON()
+	assert.NoError(t, err)
 }

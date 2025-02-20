@@ -6,36 +6,111 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestZSet(t *testing.T) {
+func TestZSet_Add(t *testing.T) {
 	zset := NewZSet()
 
-	// 测试 Add 方法
-	zset.Add("a", 10)
-	zset.Add("b", 20)
-	zset.Add("c", 15)
-	assert.Equal(t, 3, zset.Size(), "ZSet 应该有 3 个元素")
+	// Test adding new elements
+	zset.Add("item1", 10.5)
+	assert.Equal(t, 1, zset.Size())
+	assert.Contains(t, zset.ZSet, "item1")
+	assert.Equal(t, 10.5, zset.ZSet["item1"])
 
-	// 测试 Get 方法
-	score, exists := zset.Get("b")
-	assert.True(t, exists, "元素 'b' 应该存在")
-	assert.Equal(t, 20.0, score, "元素 'b' 的分数应该是 20")
+	// Test adding another element with a different score
+	zset.Add("item2", 20.5)
+	assert.Equal(t, 2, zset.Size())
+	assert.Contains(t, zset.ZSet, "item2")
+	assert.Equal(t, 20.5, zset.ZSet["item2"])
 
-	// 测试 GetRank 方法
-	rank, found := zset.GetRank("c")
-	assert.True(t, found, "元素 'c' 应该有排名")
-	assert.Equal(t, 1, rank, "元素 'c' 在排名中应该是第 1 (从 0 开始)")
+	// Test updating score of an existing element
+	zset.Add("item1", 15.0)
+	assert.Equal(t, 2, zset.Size())
+	assert.Equal(t, 15.0, zset.ZSet["item1"])
+}
 
-	// 测试 Remove 方法
-	zset.Remove("b")
-	_, exists = zset.Get("b")
-	assert.False(t, exists, "元素 'b' 应该被删除")
-	assert.Equal(t, 2, zset.Size(), "ZSet 现在应该有 2 个元素")
+func TestZSet_Remove(t *testing.T) {
+	zset := NewZSet()
+	zset.Add("item1", 10.5)
 
-	// 测试 GetRange 方法
-	result := zset.GetRange(10, 15)
-	assert.ElementsMatch(t, []string{"a", "c"}, result, "GetRange 应该返回正确的元素")
+	// Test removing an element
+	zset.Remove("item1")
+	assert.Equal(t, 0, zset.Size())
+	assert.NotContains(t, zset.ZSet, "item1")
 
-	// 测试 Clear 方法
+	// Test removing a non-existing element
+	zset.Remove("item2")
+	assert.Equal(t, 0, zset.Size())
+}
+
+func TestZSet_Get(t *testing.T) {
+	zset := NewZSet()
+	zset.Add("item1", 10.5)
+
+	// Test getting the score of an existing element
+	score, exists := zset.Get("item1")
+	assert.True(t, exists)
+	assert.Equal(t, 10.5, score)
+
+	// Test getting the score of a non-existing element
+	_, exists = zset.Get("item2")
+	assert.False(t, exists)
+}
+
+func TestZSet_GetRank(t *testing.T) {
+	zset := NewZSet()
+	zset.Add("item1", 10.5)
+	zset.Add("item2", 20.5)
+
+	// Test getting rank of an element
+	rank, exists := zset.GetRank("item1")
+	assert.True(t, exists)
+	assert.Equal(t, 1, rank)
+
+	// Test getting rank of a non-existing element
+	_, exists = zset.GetRank("item3")
+	assert.False(t, exists)
+}
+
+func TestZSet_GetRange(t *testing.T) {
+	zset := NewZSet()
+	zset.Add("item1", 10.5)
+	zset.Add("item2", 20.5)
+	zset.Add("item3", 15.0)
+
+	// Test getting elements in a score range
+	rangeItems := zset.GetRange(10.0, 20.0)
+	assert.Equal(t, []string{"item3", "item1"}, rangeItems)
+
+	// Test with a score range that doesn't match any element
+	rangeItems = zset.GetRange(30.0, 40.0)
+	assert.Empty(t, rangeItems)
+}
+
+func TestZSet_Sort(t *testing.T) {
+	zset := NewZSet()
+	zset.Add("item1", 10.5)
+	zset.Add("item2", 20.5)
+	zset.Add("item3", 15.0)
+
+	// Test if sortedScores reflects correct order
+	assert.Equal(t, []string{"item2", "item3", "item1"}, zset.sortedScores)
+}
+
+func TestZSet_Clear(t *testing.T) {
+	zset := NewZSet()
+	zset.Add("item1", 10.5)
 	zset.Clear()
-	assert.Equal(t, 0, zset.Size(), "Clear 之后 ZSet 应该为空")
+
+	// Test clear functionality
+	assert.Equal(t, 0, zset.Size())
+	assert.Equal(t, uint64(0), zset.TTL)
+	assert.Empty(t, zset.ZSet)
+}
+
+func TestZSet_ToBSON(t *testing.T) {
+	zset := NewZSet()
+	zset.Add("item1", 10.5)
+
+	// Test ToBSON
+	_, err := zset.ToBSON()
+	assert.NoError(t, err)
 }
