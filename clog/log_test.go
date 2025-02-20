@@ -24,6 +24,12 @@ func TestLogging(t *testing.T) {
 
 	Errorf("error %s", "message.")
 
+	IsDebug = true
+
+	Debug("debug message.")
+
+	Debugf("debug %s", "message.")
+
 }
 
 // 测试 Failed 函数
