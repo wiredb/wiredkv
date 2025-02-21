@@ -33,5 +33,5 @@ func TestTextOperations(t *testing.T) {
 	assert.Equal(t, text, &decodedText)
 
 	other := NewText("other text content.")
-	assert.False(t, false, text, other)
+	assert.False(t, text.Equals(other))
 }
