@@ -33,5 +33,5 @@ func (tab *Tables) Clear() {
 }
 
 func (tab Tables) ToBSON() ([]byte, error) {
-	return bson.Marshal(tab.Table)
+	return bson.Marshal(tab)
 }

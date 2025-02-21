@@ -31,4 +31,7 @@ func TestTextOperations(t *testing.T) {
 	err = bson.Unmarshal(bsonData, &decodedText)
 	assert.NoError(t, err)
 	assert.Equal(t, text, &decodedText)
+
+	other := NewText("other text content.")
+	assert.False(t, false, text, other)
 }

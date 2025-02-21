@@ -102,7 +102,7 @@ func (s *Segment) ToSet() (*types.Set, error) {
 		return nil, fmt.Errorf("not support conversion to set type")
 	}
 	var set types.Set
-	err := bson.Unmarshal(s.Value, &set.Set)
+	err := bson.Unmarshal(s.Value, &set)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (s *Segment) ToTables() (*types.Tables, error) {
 		return nil, fmt.Errorf("not support conversion to tables type")
 	}
 	var tables types.Tables
-	err := bson.Unmarshal(s.Value, &tables.Table)
+	err := bson.Unmarshal(s.Value, &tables)
 	if err != nil {
 		return nil, err
 	}

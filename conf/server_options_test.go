@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -286,8 +287,28 @@ func TestHasCustom(t *testing.T) {
 
 // TestVaildated tests the configuration validation
 func TestVaildated(t *testing.T) {
-	// Valid configuration
-	validConfig := &ServerOptions{
+	// Should pass validation
+	err := Vaildated(&ServerOptions{
+		Port:     2668,
+		Path:     "/tmp/wiredb",
+		Password: "securepassword",
+		Region: Region{
+			Enable:    true,
+			Second:    18000,
+			Threshold: 3,
+		},
+		Encryptor: Encryptor{
+			Enable: true,
+			Secret: "1234567890123456",
+		},
+		Compressor: Compressor{
+			Enable: false,
+		},
+	})
+	assert.NoError(t, err)
+
+	// Invalid configuration: port out of range
+	invalidConfig := &ServerOptions{
 		Port:     2668,
 		Path:     "/tmp/wiredb",
 		Password: "securepassword",
@@ -304,34 +325,104 @@ func TestVaildated(t *testing.T) {
 			Enable: false,
 		},
 	}
-
-	// Should pass validation
-	err := Vaildated(validConfig)
-	assert.NoError(t, err)
-
-	// Invalid configuration: port out of range
-	invalidConfig := *validConfig
 	invalidConfig.Port = 70000 // Invalid port number
 
-	err = Vaildated(&invalidConfig)
+	err = Vaildated(invalidConfig)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "port range must be between 1025 and 65534")
 
 	// Invalid configuration: empty path
-	invalidConfig = *validConfig
+	invalidConfig = &ServerOptions{
+		Port:     2668,
+		Path:     "/tmp/wiredb",
+		Password: "securepassword",
+		Region: Region{
+			Enable:    true,
+			Second:    18000,
+			Threshold: 3,
+		},
+		Encryptor: Encryptor{
+			Enable: true,
+			Secret: "1234567890123456",
+		},
+		Compressor: Compressor{
+			Enable: false,
+		},
+	}
 	invalidConfig.Path = ""
 
-	err = Vaildated(&invalidConfig)
+	err = Vaildated(invalidConfig)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "data directory path cannot be empty")
 
+	invalidConfig = &ServerOptions{
+		Port:     2668,
+		Path:     "/tmp/wiredb",
+		Password: "",
+		Region: Region{
+			Enable:    true,
+			Second:    18000,
+			Threshold: 3,
+		},
+		Encryptor: Encryptor{
+			Enable: true,
+			Secret: "1234567890123456",
+		},
+		Compressor: Compressor{
+			Enable: false,
+		},
+	}
+	err = Vaildated(invalidConfig)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "auth password cannot be empty")
+
 	// Invalid configuration: invalid secret key length
-	invalidConfig = *validConfig
+	invalidConfig = &ServerOptions{
+		Port:     2668,
+		Path:     "/tmp/wiredb",
+		Password: "securepassword",
+		Region: Region{
+			Enable:    true,
+			Second:    18000,
+			Threshold: 3,
+		},
+		Encryptor: Encryptor{
+			Enable: true,
+			Secret: "1234567890123456",
+		},
+		Compressor: Compressor{
+			Enable: false,
+		},
+	}
 	invalidConfig.Encryptor.Secret = "short" // Invalid secret key length
 
-	err = Vaildated(&invalidConfig)
+	err = Vaildated(invalidConfig)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid secret key length it must be 16, 24, or 32 bytes")
+
+	// // Invalid configuration: encryptor disable
+	invalidConfig = &ServerOptions{
+		Port:     2668,
+		Path:     "/tmp/wiredb",
+		Password: "securepassword",
+		Region: Region{
+			Enable:    true,
+			Second:    18000,
+			Threshold: 3,
+		},
+		Encryptor: Encryptor{
+			Enable: false,
+			Secret: "1234567890123456",
+		},
+		Compressor: Compressor{
+			Enable: false,
+		},
+	}
+	err = Vaildated(invalidConfig)
+
+	if err != nil {
+		assert.Error(t, err)
+	}
 }
 
 // TestSaved tests saving the configuration to a file
@@ -395,4 +486,41 @@ func TestString(t *testing.T) {
 	assert.Contains(t, str, "8080")
 	assert.Contains(t, str, "/tmp/myconfig")
 	assert.Contains(t, str, "testpassword")
+}
+
+// TestServerOptionsMethods tests various methods in ServerOptions
+func TestServerOptionsMethods(t *testing.T) {
+	// 创建一个 ServerOptions 示例
+	opt := &ServerOptions{
+		Compressor: Compressor{Enable: true},
+		Encryptor:  Encryptor{Enable: true, Secret: "secure-key-12345678"},
+		Region:     Region{Enable: true, Second: 1800},
+	}
+
+	// 1. 测试 IsCompressionEnabled 方法
+	t.Run("Test IsCompressionEnabled", func(t *testing.T) {
+		assert.True(t, opt.IsCompressionEnabled()) // Compressor.Enable = true，应返回 true
+	})
+
+	// 2. 测试 IsEncryptionEnabled 方法
+	t.Run("Test IsEncryptionEnabled", func(t *testing.T) {
+		assert.True(t, opt.IsEncryptionEnabled()) // Encryptor.Enable = true，应返回 true
+	})
+
+	// 3. 测试 IsRegionGCEnabled 方法
+	t.Run("Test IsRegionGCEnabled", func(t *testing.T) {
+		assert.True(t, opt.IsRegionGCEnabled()) // Region.Enable = true，应返回 true
+	})
+
+	// 4. 测试 RegionGCInterval 方法
+	t.Run("Test RegionGCInterval", func(t *testing.T) {
+		expectedDuration := 1800 * time.Second // 1800 秒转换为 time.Duration
+		assert.Equal(t, expectedDuration, opt.RegionGCInterval())
+	})
+
+	// 5. 测试 Secret 方法
+	t.Run("Test Secret", func(t *testing.T) {
+		expectedSecret := []byte("secure-key-12345678")
+		assert.Equal(t, expectedSecret, opt.Secret())
+	})
 }

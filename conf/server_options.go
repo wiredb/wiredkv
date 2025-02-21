@@ -3,7 +3,6 @@ package conf
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -88,7 +87,7 @@ func (PathValidator) Validate(opt *ServerOptions) error {
 type AuthValidator struct{}
 
 func (AuthValidator) Validate(opt *ServerOptions) error {
-	return validatePassword(opt.Path)
+	return validatePassword(opt.Password)
 }
 
 type EncryptorValidator struct{}
@@ -139,7 +138,7 @@ func Vaildated(opt *ServerOptions) error {
 	for _, validator := range validators {
 		err := validator.Validate(opt)
 		if err != nil {
-			return fmt.Errorf("failed to validator server configure: %w", err)
+			return err
 		}
 	}
 
