@@ -29,6 +29,7 @@ var (
 func init() {
 	root = mux.NewRouter()
 	root.HandleFunc("/", healthController)
+	root.HandleFunc("/zset/{key}", zsetController)
 	root.HandleFunc("/tables/{key}", tablesController)
 	root.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		okResponse(w, http.StatusNotFound, nil, "404 Not Found - Oops!")
@@ -117,7 +118,7 @@ func tablesController(w http.ResponseWriter, r *http.Request) {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
 			return
 		}
-		okResponse(w, http.StatusOK, nil, "request processed successfully!")
+		okResponse(w, http.StatusCreated, nil, "request processed successfully!")
 	case http.MethodPost:
 		okResponse(w, http.StatusOK, nil, "request processed successfully!")
 	case http.MethodDelete:
@@ -126,9 +127,63 @@ func tablesController(w http.ResponseWriter, r *http.Request) {
 			okResponse(w, http.StatusInternalServerError, nil, err.Error())
 			return
 		}
-		okResponse(w, http.StatusOK, nil, "delete data successfully!")
+		okResponse(w, http.StatusNoContent, nil, "delete data successfully!")
 	default:
-		okResponse(w, http.StatusMethodNotAllowed, nil, "HTTP Protocol Method Not Allowed!")
+		okResponse(w, http.StatusMethodNotAllowed, nil, "http protocol method not allowed!")
+	}
+
+}
+
+func zsetController(w http.ResponseWriter, r *http.Request) {
+	key, ok := mux.Vars(r)["key"]
+	if !ok || key == "" {
+		okResponse(w, http.StatusOK, nil, "missing required parameter key!")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		_, seg, err := storage.FetchSegment(key)
+		if err != nil {
+			okResponse(w, http.StatusInternalServerError, nil, err.Error())
+			return
+		}
+		zset, err := seg.ToZSet()
+		// storage.UpdateSegmentWithCAS(0, seg)
+		if err != nil {
+			okResponse(w, http.StatusInternalServerError, nil, err.Error())
+			return
+		}
+		okResponse(w, http.StatusOK, zset, "")
+	case http.MethodPut:
+		var tables types.Tables
+		err := json.NewDecoder(r.Body).Decode(&tables)
+		if err != nil {
+			okResponse(w, http.StatusInternalServerError, nil, err.Error())
+			return
+		}
+		seg, err := vfs.NewSegment(key, tables, tables.TTL)
+		if err != nil {
+			okResponse(w, http.StatusInternalServerError, nil, err.Error())
+			return
+		}
+		err = storage.PutSegment(key, seg)
+		if err != nil {
+			okResponse(w, http.StatusInternalServerError, nil, err.Error())
+			return
+		}
+		okResponse(w, http.StatusCreated, nil, "request processed successfully!")
+	case http.MethodPost:
+		okResponse(w, http.StatusOK, nil, "request processed successfully!")
+	case http.MethodDelete:
+		err := storage.DeleteSegment(key)
+		if err != nil {
+			okResponse(w, http.StatusInternalServerError, nil, err.Error())
+			return
+		}
+		okResponse(w, http.StatusNoContent, nil, "delete data successfully!")
+	default:
+		okResponse(w, http.StatusMethodNotAllowed, nil, "http protocol method not allowed!")
 	}
 
 }
