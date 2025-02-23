@@ -31,7 +31,7 @@ func DeleteListController(ctx *gin.Context) {
 	})
 }
 
-func GetTablesController(ctx *gin.Context) {
+func GetTableController(ctx *gin.Context) {
 	_, seg, err := storage.FetchSegment(ctx.Param("key"))
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{
@@ -51,7 +51,7 @@ func GetTablesController(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, tables)
 }
 
-func PutTablesController(ctx *gin.Context) {
+func PutTableController(ctx *gin.Context) {
 	key := ctx.Param("key")
 
 	var tables types.Table
@@ -78,7 +78,7 @@ func PutTablesController(ctx *gin.Context) {
 	})
 }
 
-func DeleteTablesController(ctx *gin.Context) {
+func DeleteTableController(ctx *gin.Context) {
 	key := ctx.Param("key")
 
 	err := storage.DeleteSegment(key)
