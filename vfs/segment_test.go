@@ -167,10 +167,10 @@ func TestToList(t *testing.T) {
 	assert.Equal(t, listData.List, result.List)
 }
 
-// TestToTables 测试 ToTables 方法
-func TestToTables(t *testing.T) {
+// TestToTable 测试 ToTable 方法
+func TestToTable(t *testing.T) {
 	// 创建 Tables 数据
-	tablesData := types.Tables{
+	tablesData := types.Table{
 		Table: map[string]interface{}{
 			"key1": "value1",
 			"key2": 42,
@@ -183,12 +183,12 @@ func TestToTables(t *testing.T) {
 
 	// 构造 Segment
 	segment := &Segment{
-		Type:  Tables,
+		Type:  Table,
 		Value: data,
 	}
 
-	// 测试 ToTables 方法
-	result, err := segment.ToTables()
+	// 测试 ToTable 方法
+	result, err := segment.ToTable()
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 

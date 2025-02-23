@@ -16,7 +16,7 @@ const (
 	ZSet
 	List
 	Text
-	Tables
+	Table
 	Number
 	Unknown
 )
@@ -145,16 +145,16 @@ func (s *Segment) ToList() (*types.List, error) {
 	return &list, nil
 }
 
-func (s *Segment) ToTables() (*types.Tables, error) {
-	if s.Type != Tables {
-		return nil, fmt.Errorf("not support conversion to tables type")
+func (s *Segment) ToTable() (*types.Table, error) {
+	if s.Type != Table {
+		return nil, fmt.Errorf("not support conversion to table type")
 	}
-	var tables types.Tables
-	err := bson.Unmarshal(s.Value, &tables)
+	var table types.Table
+	err := bson.Unmarshal(s.Value, &table)
 	if err != nil {
 		return nil, err
 	}
-	return &tables, nil
+	return &table, nil
 }
 
 func (s *Segment) ToNumber() (*types.Number, error) {
@@ -188,8 +188,8 @@ func toKind(data Serializable) (Kind, error) {
 		return List, nil
 	case types.Text:
 		return Text, nil
-	case types.Tables:
-		return Tables, nil
+	case types.Table:
+		return Table, nil
 	case *types.Number:
 		return Number, nil
 	default:

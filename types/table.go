@@ -24,42 +24,42 @@ import (
 
 // {"code":200,"message":"request processed successfully!"}
 
-type Tables struct {
+type Table struct {
 	Table map[string]any `json:"table" bson:"table"`
 	TTL   uint64         `json:"ttl,omitempty"`
 }
 
-// 新建一个 Tables
-func NewTables() *Tables {
-	return &Tables{
+// 新建一个 Table
+func NewTable() *Table {
+	return &Table{
 		Table: make(map[string]any),
 	}
 }
 
 // Clear 清空 Table 和 TTL
-func (tab *Tables) Clear() {
+func (tab *Table) Clear() {
 	tab.TTL = 0
 	tab.Table = make(map[string]any)
 }
 
 // 向 Table 中添加一个项
-func (tab *Tables) AddItem(key string, value any) {
+func (tab *Table) AddItem(key string, value any) {
 	tab.Table[key] = value
 }
 
 // 从 Table 中删除一个项
-func (tab *Tables) RemoveItem(key string) {
+func (tab *Table) RemoveItem(key string) {
 	delete(tab.Table, key)
 }
 
 // 检查 Table 中是否包含指定的键
-func (tab *Tables) ContainsKey(key string) bool {
+func (tab *Table) ContainsKey(key string) bool {
 	_, exists := tab.Table[key]
 	return exists
 }
 
 // 从 Table 中获取一个项
-func (tab *Tables) GetItem(key string) any {
+func (tab *Table) GetItem(key string) any {
 	if tab.ContainsKey(key) {
 		return tab.Table[key]
 	}
@@ -67,7 +67,7 @@ func (tab *Tables) GetItem(key string) any {
 }
 
 // 从 Tables 查找出键为目标 key 的值，包括所有值中值
-func (tab *Tables) SearchItem(key string) any {
+func (tab *Table) SearchItem(key string) any {
 	var results []any
 	if items, exists := tab.Table[key]; exists {
 		results = append(results, items)
@@ -100,10 +100,10 @@ func searchInMap(m map[string]any, key string) []any {
 }
 
 // 获取 Table 中的元素个数
-func (tab *Tables) Size() int {
+func (tab *Table) Size() int {
 	return len(tab.Table)
 }
 
-func (tab Tables) ToBSON() ([]byte, error) {
+func (tab Table) ToBSON() ([]byte, error) {
 	return bson.Marshal(tab)
 }

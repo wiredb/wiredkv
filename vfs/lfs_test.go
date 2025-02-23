@@ -171,7 +171,7 @@ func TestVFSWrite(t *testing.T) {
 }
 `
 
-	var tables types.Tables
+	var tables types.Table
 	err = json.Unmarshal([]byte(data), &tables)
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +226,7 @@ func BenchmarkVFSWrite(b *testing.B) {
   }
 }
 `
-	var tables types.Tables
+	var tables types.Table
 	err = json.Unmarshal([]byte(data), &tables)
 	if err != nil {
 		b.Fatal(err)
@@ -304,7 +304,7 @@ func TestUpdateSegmentWithCAS_Concurrent(t *testing.T) {
   }
 }
 `
-	var tables types.Tables
+	var tables types.Table
 	err = json.Unmarshal([]byte(data), &tables)
 	if err != nil {
 		t.Fatal(err)

@@ -8,13 +8,13 @@ import (
 )
 
 func TestNewTables(t *testing.T) {
-	tables := NewTables()
+	tables := NewTable()
 	assert.NotNil(t, tables)
 	assert.Empty(t, tables.Table) // 确保新建的表是空的
 }
 
 func TestTables_AddItem(t *testing.T) {
-	tables := NewTables()
+	tables := NewTable()
 	tables.AddItem("key1", "value1")
 	tables.AddItem("key2", 42)
 
@@ -24,7 +24,7 @@ func TestTables_AddItem(t *testing.T) {
 }
 
 func TestTables_RemoveItem(t *testing.T) {
-	tables := NewTables()
+	tables := NewTable()
 	tables.AddItem("key1", "value1")
 	tables.AddItem("key2", "value2")
 
@@ -35,7 +35,7 @@ func TestTables_RemoveItem(t *testing.T) {
 }
 
 func TestTables_ContainsKey(t *testing.T) {
-	tables := NewTables()
+	tables := NewTable()
 	tables.AddItem("testKey", "testValue")
 
 	assert.True(t, tables.ContainsKey("testKey"))
@@ -43,7 +43,7 @@ func TestTables_ContainsKey(t *testing.T) {
 }
 
 func TestTables_GetItem(t *testing.T) {
-	tables := NewTables()
+	tables := NewTable()
 	tables.AddItem("key1", "value1")
 
 	assert.Equal(t, "value1", tables.GetItem("key1"))
@@ -51,7 +51,7 @@ func TestTables_GetItem(t *testing.T) {
 }
 
 func TestTables_SearchItem(t *testing.T) {
-	tables := NewTables()
+	tables := NewTable()
 	tables.AddItem("key1", "value1")
 	tables.AddItem("key2", map[string]any{
 		"key1": "nested value1",
@@ -68,7 +68,7 @@ func TestTables_SearchItem(t *testing.T) {
 }
 
 func TestTables_Size(t *testing.T) {
-	tables := NewTables()
+	tables := NewTable()
 	assert.Equal(t, 0, tables.Size()) // 确保初始大小为 0
 
 	tables.AddItem("one", 1)
@@ -80,7 +80,7 @@ func TestTables_Size(t *testing.T) {
 }
 
 func TestTables_Clear(t *testing.T) {
-	tables := NewTables()
+	tables := NewTable()
 	tables.AddItem("a", "apple")
 	tables.AddItem("b", "banana")
 	tables.TTL = 100
@@ -91,7 +91,7 @@ func TestTables_Clear(t *testing.T) {
 }
 
 func TestTables_ToBSON(t *testing.T) {
-	tables := NewTables()
+	tables := NewTable()
 	tables.AddItem("x", "valueX")
 	tables.AddItem("y", 123)
 
@@ -100,7 +100,7 @@ func TestTables_ToBSON(t *testing.T) {
 	assert.NotEmpty(t, data) // 确保序列化后的 BSON 不为空
 
 	// 反序列化回 Tables 进行验证
-	var decodedTables Tables
+	var decodedTables Table
 	err = bson.Unmarshal(data, &decodedTables)
 	assert.NoError(t, err)
 	assert.Equal(t, tables.Table, decodedTables.Table) // 确保反序列化后的数据与原始数据一致

@@ -15,8 +15,7 @@ import (
 
 var (
 	// ipv4 return local IPv4 address
-	ipv4    string = "127.0.0.1"
-	storage *vfs.LogStructuredFS
+	ipv4 string = "127.0.0.1"
 )
 
 const (
