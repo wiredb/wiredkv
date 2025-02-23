@@ -60,9 +60,9 @@ func init() {
 
 	table := root.Group("/table")
 	{
-		table.GET("/:key", GetTablesController)
-		table.PUT("/:key", PutTablesController)
-		table.DELETE("/:key", DeleteTablesController)
+		table.GET("/:key", GetTableController)
+		table.PUT("/:key", PutTableController)
+		table.DELETE("/:key", DeleteTableController)
 	}
 
 	number := root.Group("/number")

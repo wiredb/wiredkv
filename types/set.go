@@ -40,6 +40,6 @@ func (s *Set) Clear() {
 	s.Set = make(map[string]bool)
 }
 
-func (s *Set) ToBSON() ([]byte, error) {
+func (s Set) ToBSON() ([]byte, error) {
 	return bson.Marshal(s)
 }
