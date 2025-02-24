@@ -12,8 +12,8 @@ type Number struct {
 	TTL   uint64 `json:"ttl,omitempty"`
 }
 
-func NewNumber(n int64) *Number {
-	return &Number{Value: n}
+func NewNumber(num int64) *Number {
+	return &Number{Value: num}
 }
 
 // ToBSON 将 Number 序列化为 BSON

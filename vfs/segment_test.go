@@ -19,12 +19,12 @@ func TestNewSegment(t *testing.T) {
 	}
 
 	// Create a new segment for the Set type
-	segment, err := NewSegment("mock-key", &set, 1000)
+	segment, err := NewSegment("mock-key", set, 1000)
 	assert.NoError(t, err)                                    // Ensure no error
 	assert.NotNil(t, segment)                                 // Ensure segment is created
 	assert.Equal(t, "mock-key", string(segment.Key))          // Ensure the key is set correctly
 	assert.Equal(t, uint32(len("mock-key")), segment.KeySize) // Ensure the key size is correct
-	assert.Equal(t, uint32(44), segment.ValueSize)            // Ensure the value size is correct
+	assert.Equal(t, uint32(21), segment.ValueSize)            // Ensure the value size is correct
 }
 
 func TestNewTombstoneSegment(t *testing.T) {
@@ -48,11 +48,11 @@ func TestSegmentSize(t *testing.T) {
 	}
 
 	// Create a segment for the Set type
-	segment, err := NewSegment("mock-key", &set, 1000)
+	segment, err := NewSegment("mock-key", set, 1000)
 	assert.NoError(t, err)
 
 	// Ensure the size is calculated correctly
-	assert.Equal(t, uint32(82), segment.Size())
+	assert.Equal(t, uint32(59), segment.Size())
 }
 
 func TestToSet(t *testing.T) {
@@ -64,7 +64,7 @@ func TestToSet(t *testing.T) {
 		},
 		TTL: uint64(0),
 	}
-	segment, err := NewSegment("mock-key", &setData, 1000)
+	segment, err := NewSegment("mock-key", setData, 1000)
 	assert.NoError(t, err)
 
 	// Convert the segment to Set
@@ -81,7 +81,7 @@ func TestTTL(t *testing.T) {
 			"item2": true,
 		},
 	}
-	segment, err := NewSegment("mock-key", &set, 1) // TTL = 1 second
+	segment, err := NewSegment("mock-key", set, 1) // TTL = 1 second
 	assert.NoError(t, err)
 
 	// Wait 1 second
@@ -103,7 +103,7 @@ func TestToZSet(t *testing.T) {
 	}
 
 	// 将 ZSet 序列化为 BSON
-	data, err := bson.Marshal(zsetData)
+	data, err := bson.Marshal(zsetData.ZSet)
 	assert.NoError(t, err)
 
 	// 构造 Segment
@@ -147,7 +147,7 @@ func TestToText(t *testing.T) {
 func TestToList(t *testing.T) {
 	// 创建 List 数据
 	listData := types.List{
-		List: []interface{}{"item1", "item2", 123},
+		List: []any{"item1", "item2", 123},
 	}
 
 	// 将 List 序列化为 BSON

@@ -29,7 +29,9 @@ func GetListController(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, list)
+	ctx.JSON(http.StatusOK, gin.H{
+		"list": list.List,
+	})
 }
 
 func PutListController(ctx *gin.Context) {
@@ -38,7 +40,7 @@ func PutListController(ctx *gin.Context) {
 	var list types.List
 	err := ctx.ShouldBindJSON(&list)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -83,7 +85,7 @@ func GetTableController(ctx *gin.Context) {
 		return
 	}
 
-	tables, err := seg.ToTable()
+	table, err := seg.ToTable()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
@@ -91,20 +93,22 @@ func GetTableController(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, tables)
+	ctx.JSON(http.StatusOK, gin.H{
+		"table": table.Table,
+	})
 }
 
 func PutTableController(ctx *gin.Context) {
 	key := ctx.Param("key")
 
-	var tables types.Table
-	err := ctx.ShouldBindJSON(&tables)
+	var table types.Table
+	err := ctx.ShouldBindJSON(&table)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
-	seg, err := vfs.NewSegment(key, tables, tables.TTL)
+	seg, err := vfs.NewSegment(key, table, table.TTL)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
@@ -153,7 +157,9 @@ func GetZsetController(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, zset)
+	ctx.JSON(http.StatusOK, gin.H{
+		"list": zset.ZSet,
+	})
 }
 
 func PutZsetController(ctx *gin.Context) {
@@ -162,7 +168,7 @@ func PutZsetController(ctx *gin.Context) {
 	var zset types.ZSet
 	err := ctx.ShouldBindJSON(&zset)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -215,7 +221,9 @@ func GetTextController(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, text)
+	ctx.JSON(http.StatusOK, gin.H{
+		"text": text.Content,
+	})
 }
 
 func PutTextController(ctx *gin.Context) {
@@ -224,7 +232,7 @@ func PutTextController(ctx *gin.Context) {
 	var text types.Text
 	err := ctx.ShouldBindJSON(&text)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -277,7 +285,9 @@ func GetNumberController(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, number)
+	ctx.JSON(http.StatusOK, gin.H{
+		"number": number.Value,
+	})
 }
 
 func PutNumberController(ctx *gin.Context) {
@@ -286,7 +296,7 @@ func PutNumberController(ctx *gin.Context) {
 	var number types.Number
 	err := ctx.ShouldBindJSON(&number)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -339,7 +349,9 @@ func GetSetController(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, set)
+	ctx.JSON(http.StatusOK, gin.H{
+		"set": set.Set,
+	})
 }
 
 func PutSetController(ctx *gin.Context) {
@@ -348,7 +360,7 @@ func PutSetController(ctx *gin.Context) {
 	var set types.Set
 	err := ctx.ShouldBindJSON(&set)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
 

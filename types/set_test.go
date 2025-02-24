@@ -76,8 +76,8 @@ func TestSet_ToBSON(t *testing.T) {
 	assert.NotEmpty(t, data) // 确保序列化后的 BSON 不为空
 
 	// 反序列化回 Set 进行验证
-	var decodedSet Set
+	var decodedSet map[string]bool
 	err = bson.Unmarshal(data, &decodedSet)
 	assert.NoError(t, err)
-	assert.Equal(t, set.Set, decodedSet.Set) // 确保反序列化后的数据与原始数据一致
+	assert.Equal(t, set.Set, decodedSet) // 确保反序列化后的数据与原始数据一致
 }

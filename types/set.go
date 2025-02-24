@@ -41,5 +41,5 @@ func (s *Set) Clear() {
 }
 
 func (s Set) ToBSON() ([]byte, error) {
-	return bson.Marshal(s)
+	return bson.Marshal(s.Set)
 }

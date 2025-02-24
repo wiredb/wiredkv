@@ -102,7 +102,7 @@ func (s *Segment) ToSet() (*types.Set, error) {
 		return nil, fmt.Errorf("not support conversion to set type")
 	}
 	var set types.Set
-	err := bson.Unmarshal(s.Value, &set)
+	err := bson.Unmarshal(s.Value, &set.Set)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (s *Segment) ToZSet() (*types.ZSet, error) {
 		return nil, fmt.Errorf("not support conversion to zset type")
 	}
 	var zset types.ZSet
-	err := bson.Unmarshal(s.Value, &zset)
+	err := bson.Unmarshal(s.Value, &zset.ZSet)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (s *Segment) TTL() int64 {
 // 将类型映射为 Kind 的辅助函数
 func toKind(data Serializable) (Kind, error) {
 	switch data.(type) {
-	case *types.Set:
+	case types.Set:
 		return Set, nil
 	case types.ZSet:
 		return ZSet, nil
@@ -191,6 +191,8 @@ func toKind(data Serializable) (Kind, error) {
 	case types.Table:
 		return Table, nil
 	case types.Number:
+		return Number, nil
+	case *types.Number:
 		return Number, nil
 	default:
 		return Unknown, errors.New("unknown data type")

@@ -1,0 +1,8 @@
+{
+    "set": {
+        "item1": true,
+        "item2": false,
+        "item3": true
+    },
+    "ttl": 120
+}

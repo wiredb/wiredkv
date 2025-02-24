@@ -67,5 +67,5 @@ func (ls *List) Clear() {
 }
 
 func (ls List) ToBSON() ([]byte, error) {
-	return bson.Marshal(ls.List)
+	return bson.Marshal(ls)
 }

@@ -388,7 +388,10 @@ func TestConcurrentPutAndFetchSegment(t *testing.T) {
 			defer wg.Done()
 			// 创建 segment
 			k := fmt.Sprintf("key-%d", id)
-			segment, err := NewSegment(k, types.NewNumber(int64(id)), 0)
+
+			number := types.NewNumber(int64(id))
+
+			segment, err := NewSegment(k, number, 0)
 			if err != nil {
 				t.Errorf("failed to create segment for key %s: %v", k, err)
 				return

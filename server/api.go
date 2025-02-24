@@ -112,7 +112,7 @@ func authMiddleware() gin.HandlerFunc {
 			if !ok {
 				clog.Warnf("Unauthorized IP address: %s", ip)
 				c.JSON(http.StatusUnauthorized, gin.H{
-					"message": fmt.Sprintf("you IP %s is not allowed!", ip),
+					"message": fmt.Sprintf("client IP %s is not allowed!", ip),
 				})
 				c.Abort()
 				return
