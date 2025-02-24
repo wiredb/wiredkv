@@ -7,7 +7,7 @@ import (
 )
 
 type List struct {
-	List []any  `json:"list" bson:"list"`
+	List []any  `json:"list" bson:"list" binding:"required"`
 	TTL  uint64 `json:"ttl,omitempty"`
 }
 

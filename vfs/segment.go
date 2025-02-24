@@ -190,7 +190,7 @@ func toKind(data Serializable) (Kind, error) {
 		return Text, nil
 	case types.Table:
 		return Table, nil
-	case *types.Number:
+	case types.Number:
 		return Number, nil
 	default:
 		return Unknown, errors.New("unknown data type")

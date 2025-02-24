@@ -25,7 +25,7 @@ import (
 // {"code":200,"message":"request processed successfully!"}
 
 type Table struct {
-	Table map[string]any `json:"table" bson:"table"`
+	Table map[string]any `json:"table" bson:"table" binding:"required"`
 	TTL   uint64         `json:"ttl,omitempty"`
 }
 

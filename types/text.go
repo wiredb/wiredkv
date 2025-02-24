@@ -7,7 +7,7 @@ import (
 )
 
 type Text struct {
-	Content string `json:"content" bson:"content"`
+	Content string `json:"content" bson:"content" binding:"required"`
 	TTL     uint64 `json:"ttl,omitempty"`
 }
 
