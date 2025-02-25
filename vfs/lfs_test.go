@@ -483,13 +483,15 @@ func TestVFSOpertions(t *testing.T) {
 	_, _, err = fss.FetchSegment("key-01")
 	assert.Equal(t, err.Error(), "inode index for 9171687345308829835 not found")
 
+	err = fss.ExportSnapshotIndex()
+	assert.NoError(t, err)
+
 	err = fss.SetEncryptor(AESCryptor, []byte("1234567890123456"))
 	assert.NoError(t, err)
 
 	fss.SetCompressor(SnappyCompressor)
 
-	err = fss.ExportSnapshotIndex()
-	assert.NoError(t, err)
+	transformer = NewTransformer()
 
 	os.RemoveAll(conf.Settings.Path)
 }
