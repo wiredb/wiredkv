@@ -11,6 +11,7 @@ import (
 
 	"github.com/auula/wiredkv/conf"
 	"github.com/auula/wiredkv/types"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestSerializedIndex 测试 serializedIndex 函数
@@ -432,4 +433,63 @@ func TestConcurrentPutAndFetchSegment(t *testing.T) {
 
 	// 等待所有 goroutine 完成
 	wg.Wait()
+}
+
+func TestVFSOpertions(t *testing.T) {
+	fss, err := OpenFS(&Options{
+		FSPerm:    conf.FSPerm,
+		Path:      conf.Settings.Path,
+		Threshold: conf.Settings.Region.Threshold,
+	})
+	assert.NoError(t, err)
+
+	data := `
+{
+  "table": {
+    "is_valid": false,
+    "items": [
+      {
+        "id": 1,
+        "name": "Item 1"
+      },
+      {
+        "id": 2,
+        "name": "Item 2"
+      }
+    ],
+    "meta": {
+      "version": "2.0",
+      "author": "Leon Ding"
+    }
+  }
+}
+`
+
+	var tables types.Table
+	err = json.Unmarshal([]byte(data), &tables)
+	assert.NoError(t, err)
+
+	seg, err := NewSegment("key-01", tables, tables.TTL)
+	assert.NoError(t, err)
+
+	err = fss.PutSegment("key-01", seg)
+	assert.NoError(t, err)
+
+	assert.Equal(t, fss.KeysCount(), 1)
+
+	err = fss.DeleteSegment("key-01")
+	assert.NoError(t, err)
+
+	_, _, err = fss.FetchSegment("key-01")
+	assert.Equal(t, err.Error(), "inode index for 9171687345308829835 not found")
+
+	err = fss.SetEncryptor(AESCryptor, []byte("1234567890123456"))
+	assert.NoError(t, err)
+
+	fss.SetCompressor(SnappyCompressor)
+
+	err = fss.ExportSnapshotIndex()
+	assert.NoError(t, err)
+
+	os.RemoveAll(conf.Settings.Path)
 }
