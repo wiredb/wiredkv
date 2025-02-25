@@ -6,7 +6,6 @@ import (
 
 	"github.com/auula/wiredkv/types"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/mgo.v2/bson"
 )
 
 func TestNewSegment(t *testing.T) {
@@ -102,15 +101,8 @@ func TestToZSet(t *testing.T) {
 		},
 	}
 
-	// 将 ZSet 序列化为 BSON
-	data, err := bson.Marshal(zsetData.ZSet)
+	segment, err := NewSegment("test-key-01", zsetData, 0)
 	assert.NoError(t, err)
-
-	// 构造 Segment
-	segment := Segment{
-		Type:  ZSet,
-		Value: data,
-	}
 
 	// 测试 ToZSet 方法
 	result, err := segment.ToZSet()
@@ -126,15 +118,8 @@ func TestToText(t *testing.T) {
 		Content: "Hello, World!",
 	}
 
-	// 将 Text 序列化为 BSON
-	data, err := bson.Marshal(textData)
+	segment, err := NewSegment("test-key-01", textData, 0)
 	assert.NoError(t, err)
-
-	// 构造 Segment
-	segment := &Segment{
-		Type:  Text,
-		Value: data,
-	}
 
 	// 测试 ToText 方法
 	result, err := segment.ToText()
@@ -150,15 +135,8 @@ func TestToList(t *testing.T) {
 		List: []any{"item1", "item2", 123},
 	}
 
-	// 将 List 序列化为 BSON
-	data, err := bson.Marshal(listData)
+	segment, err := NewSegment("test-key-01", listData, 0)
 	assert.NoError(t, err)
-
-	// 构造 Segment
-	segment := &Segment{
-		Type:  List,
-		Value: data,
-	}
 
 	// 测试 ToList 方法
 	result, err := segment.ToList()
@@ -177,15 +155,8 @@ func TestToTable(t *testing.T) {
 		},
 	}
 
-	// 将 Tables 序列化为 BSON
-	data, err := bson.Marshal(tablesData)
+	segment, err := NewSegment("test-key-01", tablesData, 0)
 	assert.NoError(t, err)
-
-	// 构造 Segment
-	segment := &Segment{
-		Type:  Table,
-		Value: data,
-	}
 
 	// 测试 ToTable 方法
 	result, err := segment.ToTable()
