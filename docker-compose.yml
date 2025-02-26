@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  wiredb:
+    image: wiredb:latest
+    container_name: wiredb
+    ports:
+      - "2668:2668"
+    volumes:
+      - ./data:/tmp/wiredb
+    restart: unless-stopped
