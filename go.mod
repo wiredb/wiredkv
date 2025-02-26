@@ -7,7 +7,6 @@ require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/golang/snappy v0.0.4
 	github.com/gookit/color v1.5.4
-	github.com/gorilla/mux v1.8.1
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/viper v1.16.0
