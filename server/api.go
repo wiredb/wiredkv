@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const version = "wiredb/0.1.1"
+const version = "wiredb/1.0.0"
 
 var (
 	root         *gin.Engine

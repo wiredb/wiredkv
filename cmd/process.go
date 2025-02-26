@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	version = "v0.1.1"
+	version = "v1.0.0"
 	website = "https://wiredb.github.io"
 )
 
