@@ -9,13 +9,14 @@ echo "2: testing conf package."
 echo "3: testing vfs  package."
 echo "4: testing utils package."
 echo "5: testing codecov coverage."
+echo "6: builder container images."
 
 echo ""
 
 case_num=$1
 
 if [ -z "$case_num" ]; then
-    echo "Please provide an option (1, 2, 3, 4, 5)."
+    echo "Please provide an option (1, 2, 3, 4, 5, 6)."
     exit 1
 fi
 
@@ -39,6 +40,10 @@ function test_vfs_packages() {
     sudo cd vfs && go test -v
 }
 
+function build_container_images() {
+    docker build -t wiredb:latest -t wiredb:0.1.1 .
+}
+
 if [ "$case_num" -eq 1 ]; then
     test_cmd_package
 elif [ "$case_num" -eq 2 ]; then
@@ -49,7 +54,9 @@ elif [ "$case_num" -eq 4 ]; then
     test_utils_packages
 elif [ "$case_num" -eq 5 ]; then
     test_all_packages
+elif [ "$case_num" -eq 6 ]; then
+    build_container_images    
 else
     echo "Invalid option!"
-    echo "Please provide a valid option (1, 2, 3, 4, 5)."
+    echo "Please provide a valid option (1, 2, 3, 4, 5, 6)."
 fi
