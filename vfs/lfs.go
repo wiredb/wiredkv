@@ -544,6 +544,11 @@ func (lfs *LogStructuredFS) CloseFS() error {
 	for _, file := range lfs.regions {
 		err := utils.FlushToDisk(file)
 		if err != nil {
+			// In-memory indexes must be persisted
+			inner := lfs.ExportSnapshotIndex()
+			if inner != nil {
+				return fmt.Errorf("failed to close LogStructuredFS: %w", errors.Join(err, inner))
+			}
 			return fmt.Errorf("failed to close region file: %w", err)
 		}
 	}
