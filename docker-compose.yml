@@ -1,10 +1,10 @@
 version: '3.8'
 services:
   wiredb:
-    image: wiredb:latest
+    image: auula/wiredb:v1.0.0
     container_name: wiredb
     ports:
       - "2668:2668"
     volumes:
-      - ./data:/tmp/wiredb
+      - /var/wiredb:/tmp/wiredb
     restart: unless-stopped

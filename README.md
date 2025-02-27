@@ -25,7 +25,7 @@
 
 ---
 
-### 特 性
+### 🌟 特 性
 
 - 支持多种内置的数据结构
 - 支持数据安全 IP 白名单访问功能
@@ -36,7 +36,39 @@
 
 ---
 
-### 快速开始
+### 🚀 快速开始
+
+使用容器管理工具可以快速部署 `wiredb:v1.0.0` 镜像来测试 WireDB 提供的服务。只需运行以下命令，即可拉取 WireDB 镜像并启动一个容器运行 WireDB 服务：
+
+```shell
+docker pull auula/wiredb:v1.0.0
+```
+
+运行 WireDB 镜像启动容器服务并且映射端口到外部主机网络，如何下面命令：
+
+```shell
+docker run -p 2668:2668 wiredb:v1.0.0
+```
+
+注意通过 RESTful API HTTP 协议操作数据时请在 HTTP 请求头中添加 `Auth-Token: xxxx` 访问密码。此默认访问密码为 WireDB 进程自动生成的，需要通过查看容器运行输出的日志信息获得，命令如下：
+
+```shell
+root@2c2m:~# docker logs 46ae91bc73a6
+                         _            ____
+                 _    __(_)______ ___/ / /
+                | |/|/ / / __/ -_) _  / _ \
+                |__,__/_/_/  \__/\_,_/_.__/  v1.0.0
+
+  WireDB is a NoSQL database based on Log-structured file system.
+  Software License: Apache 2.0  Website: https://wiredb.github.io
+
+[WIREDB:C] 2025/02/27 10:07:01 [WARN]	The default password is: T9EHAvi5dcIpPK9G#ADlVj4NB 👈
+[WIREDB:C] 2025/02/27 10:07:01 [INFO]	Logging output initialized successfully
+[WIREDB:C] 2025/02/27 10:07:01 [INFO]	Loading and parsing region data files...
+[WIREDB:C] 2025/02/27 10:07:01 [INFO]	Region compression activated successfully
+[WIREDB:C] 2025/02/27 10:07:01 [INFO]	File system setup completed successfully
+[WIREDB:C] 2025/02/27 10:07:01 [INFO]	HTTP server started at http://172.0.0.1:2668 🚀
+```
 
 推荐使用 Linux 发型版本来运行 WireDB 服务，WireDB 服务进程依赖配置文件中的参数，在运行 WireDB 服务之前将下面的配置内容写到 `config.yaml` 中：
 
@@ -62,11 +94,6 @@ allowip:            # 白名单 IP 列表，可以去掉这个字段，去掉之
     - 127.0.0.1
 ```
 
-使用容器管理工具可以快速部署 `wiredb:latest` 容器来测试 WireDB 提供的服务，将配置 `config.yaml` 文件移动到 `data` 目录中，该 `data` 目录用于映射容器的数据卷 Volumes ，使用下面命令即可快速部署运行 WireDB 镜像：
 
-```shell
-docker pull auula:wiredb
-docker run --name wiredb -p 2668:2668 -v $(pwd)/data:/tmp/wiredb wiredb:0.1.1
-```
 
-然而，对于长期运行的环境，建议直接在裸机上运行，以减少容器化带来的额外开销，并确保更好的性能和稳定性。
+

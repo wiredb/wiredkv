@@ -41,7 +41,7 @@ function test_vfs_packages() {
 }
 
 function build_container_images() {
-    docker build -t wiredb:latest -t wiredb:0.1.1 .
+    docker build -t wiredb:bate .
 }
 
 if [ "$case_num" -eq 1 ]; then

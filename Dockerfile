@@ -15,8 +15,6 @@ WORKDIR /tmp/wiredb
 
 COPY --from=builder /app/wiredb /usr/local/bin/wiredb
 
-COPY config.yaml /tmp/wiredb/config.yaml
-
 EXPOSE 2668
 
-CMD ["/usr/local/bin/wiredb", "--config", "/tmp/wiredb/config.yaml"]
+CMD ["/usr/local/bin/wiredb"]
