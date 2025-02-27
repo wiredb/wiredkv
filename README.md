@@ -25,7 +25,7 @@
 
 ---
 
-### 🌟 特 性
+## 🌟 特 性
 
 - 支持多种内置的数据结构
 - 支持数据安全 IP 白名单访问功能
@@ -36,23 +36,23 @@
 
 ---
 
-### 🚀 快速开始
+## 🚀 快速开始
 
-使用容器管理工具可以快速部署 `wiredb:v1.0.0` 镜像来测试 WireDB 提供的服务。只需运行以下命令，即可拉取 WireDB 镜像并启动一个容器运行 WireDB 服务：
+使用容器管理工具可以快速部署 [`wiredb:latest`](https://hub.docker.com/r/auula/wiredb) 镜像来测试 WireDB 提供的服务。只需运行以下命令，即可拉取 WireDB 镜像并启动一个容器运行 WireDB 服务：
 
-```shell
+```bash
 docker pull auula/wiredb:v1.0.0
 ```
 
 运行 WireDB 镜像启动容器服务并且映射端口到外部主机网络，如何下面命令：
 
-```shell
-docker run -p 2668:2668 wiredb:v1.0.0
+```bash
+docker run -p 2668:2668 auula/wiredb:v1.0.0
 ```
 
 注意通过 RESTful API HTTP 协议操作数据时请在 HTTP 请求头中添加 `Auth-Token: xxxx` 访问密码。此默认访问密码为 WireDB 进程自动生成的，需要通过查看容器运行输出的日志信息获得，命令如下：
 
-```shell
+```bash
 root@2c2m:~# docker logs 46ae91bc73a6
                          _            ____
                  _    __(_)______ ___/ / /
@@ -69,6 +69,8 @@ root@2c2m:~# docker logs 46ae91bc73a6
 [WIREDB:C] 2025/02/27 10:07:01 [INFO]	File system setup completed successfully
 [WIREDB:C] 2025/02/27 10:07:01 [INFO]	HTTP server started at http://172.0.0.1:2668 🚀
 ```
+
+---
 
 推荐使用 Linux 发型版本来运行 WireDB 服务，WireDB 服务进程依赖配置文件中的参数，在运行 WireDB 服务之前将下面的配置内容写到 `config.yaml` 中：
 
