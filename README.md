@@ -25,7 +25,7 @@
 
 ---
 
-## 🌟 特 性
+## 🎉 特 性
 
 - 支持多种内置的数据结构
 - 支持数据安全 IP 白名单访问功能
@@ -95,6 +95,21 @@ allowip:            # 白名单 IP 列表，可以去掉这个字段，去掉之
     - 192.168.101.225
     - 127.0.0.1
 ```
+
+---
+
+## 🌟 Stargazers over time
+
+[![Stargazers over time](https://starchart.cc/wiredb/wiredb.svg?background=%23ffffff&axis=%23333333&line=%23f84206)](https://starchart.cc/wiredb/wiredb)
+
+
+---
+
+## 👬 Contributors
+
+🤝 Thanks to all the contributors below! 
+
+![Contributors](https://contributors-img.web.app/image?repo=wiredb/wiredb)
 
 
 
